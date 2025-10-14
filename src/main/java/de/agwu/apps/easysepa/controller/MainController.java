@@ -1,10 +1,15 @@
 package de.agwu.apps.easysepa.controller;
 
 import com.opencsv.exceptions.CsvException;
-import de.agwu.apps.easysepa.model.*;
-import de.agwu.apps.easysepa.service.CsvService;
+import de.agwu.apps.easysepa.model.config.FieldMappingConfig;
+import de.agwu.apps.easysepa.model.sepa.SepaField;
+import de.agwu.apps.easysepa.model.sepa.SepaFormat;
+import de.agwu.apps.easysepa.model.sepa.definition.ISepaFieldDefinition;
+import de.agwu.apps.easysepa.model.sepa.definition.SepaFieldDefinitionFactory;
+import de.agwu.apps.easysepa.service.ConfigService;
 import de.agwu.apps.easysepa.service.FieldMappingService;
-import de.agwu.apps.easysepa.service.UiHelperService;
+import de.agwu.apps.easysepa.util.CsvUtil;
+import de.agwu.apps.easysepa.util.UiUtil;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
@@ -62,11 +67,11 @@ public class MainController {
     private Map<String, Control> fieldMappingControls = new HashMap<>();
     private ISepaFieldDefinition currentFieldDefinition;
 
-    // Services
-    private final CsvService csvService = new CsvService();
+    // Services and Utilities
+    private final CsvUtil csvUtil = new CsvUtil();
     private final FieldMappingService fieldMappingService = new FieldMappingService();
-    private final UiHelperService uiHelperService = new UiHelperService();
-    private final de.agwu.apps.easysepa.service.ConfigService configService = new de.agwu.apps.easysepa.service.ConfigService();
+    private final UiUtil uiUtil = new UiUtil();
+    private final ConfigService configService = new ConfigService();
 
     @FXML
     public void initialize() {
@@ -79,6 +84,8 @@ public class MainController {
             if (csvHeaders != null && csvHeaders.length > 0) {
                 showFieldMapping();
             }
+            // Refresh config list to show only configs for selected format
+            refreshConfigList();
         });
 
         // Initialize separator options
@@ -143,10 +150,10 @@ public class MainController {
         }
 
         try {
-            char separator = csvService.parseSeparator(separatorComboBox.getValue());
+            char separator = csvUtil.parseSeparator(separatorComboBox.getValue());
             String encoding = encodingComboBox.getValue();
 
-            csvHeaders = csvService.readHeaders(selectedFile, separator, encoding);
+            csvHeaders = csvUtil.readHeaders(selectedFile, separator, encoding);
 
             if (csvHeaders != null && csvHeaders.length > 0) {
                 // Display headers in ListView
@@ -240,21 +247,21 @@ public class MainController {
 
     private int addFieldMappingRow(SepaField field, int row, boolean isGlobal) {
         // Create label with info button using service
-        HBox labelBox = uiHelperService.createLabelWithInfo(field);
+        HBox labelBox = uiUtil.createLabelWithInfo(field);
         fieldMappingGrid.add(labelBox, 0, row);
 
         if (isGlobal) {
             // For global fields, create appropriate control with validation
-            Control fieldControl = uiHelperService.createDefaultValueField(field, true);
+            Control fieldControl = uiUtil.createDefaultValueField(field, true);
             fieldMappingControls.put(field.getFieldName(), fieldControl);
             fieldMappingGrid.add(fieldControl, 1, row, 2, 1);
         } else {
             // For transaction fields, dropdown with CSV columns + default value option
-            ComboBox<String> comboBox = uiHelperService.createColumnComboBox(csvHeaders);
+            ComboBox<String> comboBox = uiUtil.createColumnComboBox(csvHeaders);
             fieldMappingGrid.add(comboBox, 1, row);
 
             // Create appropriate control for default value with validation
-            Control defaultField = uiHelperService.createDefaultValueField(field, false);
+            Control defaultField = uiUtil.createDefaultValueField(field, false);
             fieldMappingGrid.add(defaultField, 2, row);
 
             // Store both controls
@@ -295,6 +302,10 @@ public class MainController {
     protected void onCancelMapping() {
         mappingPane.setVisible(false);
         mappingPane.setManaged(false);
+        headersPane.setVisible(false);
+        headersPane.setManaged(false);
+        headersListView.getItems().clear();
+        csvConfigPane.setExpanded(true);
         setStatus("Zuordnung abgebrochen.", StatusType.INFO);
     }
 
@@ -323,7 +334,7 @@ public class MainController {
         for (SepaField field : currentFieldDefinition.getGlobalFields()) {
             if (field.isRequired()) {
                 Control control = fieldMappingControls.get(field.getFieldName());
-                String value = uiHelperService.getControlValue(control);
+                String value = uiUtil.getControlValue(control);
                 if (value == null || value.trim().isEmpty()) {
                     missingFields.add(field.getDisplayName());
                 }
@@ -336,7 +347,7 @@ public class MainController {
                 Control defaultField = fieldMappingControls.get(field.getFieldName() + "_default");
 
                 if ("-- Fester Wert --".equals(combo.getValue())) {
-                    String value = uiHelperService.getControlValue(defaultField);
+                    String value = uiUtil.getControlValue(defaultField);
                     if (value == null || value.trim().isEmpty()) {
                         missingFields.add(field.getDisplayName());
                     }
@@ -390,7 +401,7 @@ public class MainController {
         // Save global field mappings
         for (SepaField field : currentFieldDefinition.getGlobalFields()) {
             Control control = fieldMappingControls.get(field.getFieldName());
-            String value = uiHelperService.getControlValue(control);
+            String value = uiUtil.getControlValue(control);
             if (value != null && !value.trim().isEmpty()) {
                 config.getGlobalFieldDefaultValues().put(field.getFieldName(), value);
             }
@@ -405,7 +416,7 @@ public class MainController {
             config.getTransactionFieldMappings().put(field.getFieldName(), selectedColumn);
 
             if ("-- Fester Wert --".equals(selectedColumn)) {
-                String value = uiHelperService.getControlValue(defaultField);
+                String value = uiUtil.getControlValue(defaultField);
                 if (value != null && !value.trim().isEmpty()) {
                     config.getTransactionFieldDefaultValues().put(field.getFieldName(), value);
                 }
@@ -434,10 +445,21 @@ public class MainController {
         try {
             FieldMappingConfig config = configService.loadConfig(selectedConfig);
 
+            if (config == null) {
+                setStatus("Fehler: Konfiguration konnte nicht geladen werden.", StatusType.ERROR);
+                return;
+            }
+
             // Apply CSV configuration
-            separatorComboBox.setValue(config.getCsvSeparator());
-            encodingComboBox.setValue(config.getCsvEncoding());
-            decimalSeparatorComboBox.setValue(config.getDecimalSeparator());
+            if (config.getCsvSeparator() != null) {
+                separatorComboBox.setValue(config.getCsvSeparator());
+            }
+            if (config.getCsvEncoding() != null) {
+                encodingComboBox.setValue(config.getCsvEncoding());
+            }
+            if (config.getDecimalSeparator() != null) {
+                decimalSeparatorComboBox.setValue(config.getDecimalSeparator());
+            }
 
             // Apply SEPA format
             for (SepaFormat format : SepaFormat.values()) {
@@ -528,7 +550,28 @@ public class MainController {
 
     private void refreshConfigList() {
         savedConfigsComboBox.getItems().clear();
-        List<String> configs = configService.listConfigs();
-        savedConfigsComboBox.getItems().addAll(configs);
+
+        // Get selected SEPA format
+        SepaFormat selectedFormat = sepaFormatComboBox.getValue();
+        if (selectedFormat == null) {
+            return;
+        }
+
+        // Get all configs and filter by format
+        List<String> allConfigs = configService.listConfigs();
+        List<String> filteredConfigs = new ArrayList<>();
+
+        for (String configName : allConfigs) {
+            try {
+                FieldMappingConfig config = configService.loadConfig(configName);
+                if (config != null && selectedFormat.getCode().equals(config.getSepaFormat())) {
+                    filteredConfigs.add(configName);
+                }
+            } catch (IOException e) {
+                // Skip configs that can't be loaded
+            }
+        }
+
+        savedConfigsComboBox.getItems().addAll(filteredConfigs);
     }
 }

@@ -1,6 +1,6 @@
 package de.agwu.apps.easysepa.service;
 
-import de.agwu.apps.easysepa.model.SepaField;
+import de.agwu.apps.easysepa.model.sepa.SepaField;
 
 /**
  * Service for field mapping logic

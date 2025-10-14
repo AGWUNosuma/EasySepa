@@ -2,7 +2,7 @@ package de.agwu.apps.easysepa.service;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import de.agwu.apps.easysepa.model.FieldMappingConfig;
+import de.agwu.apps.easysepa.model.config.FieldMappingConfig;
 
 import java.io.File;
 import java.io.FileReader;

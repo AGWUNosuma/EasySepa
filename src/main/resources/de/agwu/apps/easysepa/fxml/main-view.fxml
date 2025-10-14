@@ -13,7 +13,7 @@
         <VBox spacing="10.0" style="-fx-padding: 10;">
             <HBox spacing="15.0" alignment="CENTER_LEFT">
                 <Label text="Format:"/>
-                <ComboBox fx:id="sepaFormatComboBox" prefWidth="200"/>
+                <ComboBox fx:id="sepaFormatComboBox" prefWidth="400"/>
             </HBox>
         </VBox>
     </TitledPane>
