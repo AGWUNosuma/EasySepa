@@ -1,0 +1,87 @@
+/* Main container */
+.main-container {
+    -fx-padding: 20;
+}
+
+/* Section headers */
+.section-header {
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+}
+
+.subsection-header {
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+}
+
+/* Format info */
+.format-info {
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-text-fill: #0066cc;
+}
+
+/* Field labels */
+.field-label-required {
+    -fx-font-weight: bold;
+}
+
+/* Info button */
+.info-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #1976D2;
+    -fx-font-style: italic;
+    -fx-font-weight: bold;
+    -fx-font-size: 11px;
+    -fx-padding: 0;
+    -fx-border-color: #2196F3;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-cursor: hand;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+}
+
+.info-button:hover {
+    -fx-background-color: #E3F2FD;
+}
+
+/* Status labels */
+.status-success {
+    -fx-text-fill: green;
+}
+
+.status-error {
+    -fx-text-fill: red;
+}
+
+.status-info {
+    -fx-text-fill: #666;
+}
+
+.status-working {
+    -fx-text-fill: blue;
+}
+
+/* Buttons */
+.primary-button {
+    -fx-font-weight: bold;
+}
+
+/* Validation styles */
+.field-valid {
+    -fx-border-color: #4CAF50;
+    -fx-border-width: 1px;
+}
+
+.field-invalid {
+    -fx-border-color: #F44336;
+    -fx-border-width: 2px;
+}
+
+.validation-error-label {
+    -fx-text-fill: #F44336;
+    -fx-font-size: 10px;
+}

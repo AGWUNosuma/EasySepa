@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox spacing="15.0" xmlns:fx="http://javafx.com/fxml"
+      fx:controller="de.agwu.apps.easysepa.controller.MainController"
+      style="-fx-padding: 20;">
+
+    <!-- SEPA Format Selection -->
+    <TitledPane text="SEPA Format" animated="true" expanded="true">
+        <VBox spacing="10.0" style="-fx-padding: 10;">
+            <HBox spacing="15.0" alignment="CENTER_LEFT">
+                <Label text="Format:"/>
+                <ComboBox fx:id="sepaFormatComboBox" prefWidth="200"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+
+    <!-- CSV Configuration and File Selection -->
+    <TitledPane fx:id="csvConfigPane" text="CSV Datei laden" animated="true" expanded="true">
+        <VBox spacing="15.0" style="-fx-padding: 10;">
+            <!-- CSV Configuration -->
+            <VBox spacing="10.0">
+                <Label text="CSV Konfiguration:" style="-fx-font-weight: bold; -fx-font-size: 12;"/>
+                <HBox spacing="15.0" alignment="CENTER_LEFT">
+                    <Label text="Trennzeichen:"/>
+                    <ComboBox fx:id="separatorComboBox" prefWidth="150">
+                    </ComboBox>
+
+                    <Label text="Kodierung:"/>
+                    <ComboBox fx:id="encodingComboBox" prefWidth="150">
+                    </ComboBox>
+
+                    <Label text="Dezimaltrennzeichen:"/>
+                    <ComboBox fx:id="decimalSeparatorComboBox" prefWidth="150">
+                    </ComboBox>
+                </HBox>
+            </VBox>
+
+            <Separator/>
+
+            <!-- File Selection -->
+            <VBox spacing="10.0">
+                <Label text="Datei auswählen:" style="-fx-font-weight: bold; -fx-font-size: 12;"/>
+                <HBox spacing="10.0" alignment="CENTER_LEFT">
+                    <TextField fx:id="filePathField" promptText="Keine Datei ausgewählt..."
+                               editable="false" HBox.hgrow="ALWAYS"/>
+                    <Button text="Durchsuchen..." onAction="#onBrowseFile"/>
+                </HBox>
+                <Button text="CSV laden" onAction="#onLoadCsv" disable="true" fx:id="loadButton" maxWidth="150"/>
+            </VBox>
+        </VBox>
+    </TitledPane>
+
+    <!-- CSV Headers Display -->
+    <TitledPane fx:id="headersPane" text="Erkannte Spalten" animated="true" expanded="true"
+                visible="false" managed="false">
+        <VBox spacing="10.0" style="-fx-padding: 10;">
+            <ListView fx:id="headersListView" prefHeight="100" style="-fx-font-family: monospace;"/>
+        </VBox>
+    </TitledPane>
+
+    <!-- Field Mapping Section -->
+    <TitledPane fx:id="mappingPane" text="Feld-Zuordnung" animated="true" expanded="true"
+                visible="false" managed="false">
+        <VBox spacing="15.0" style="-fx-padding: 10;">
+            <Label text="Ordnen Sie die CSV-Spalten den SEPA-Feldern zu oder geben Sie feste Werte ein:"
+                   style="-fx-text-fill: #666;" wrapText="true"/>
+
+            <Separator/>
+
+            <!-- Configuration Management -->
+            <VBox spacing="10.0">
+                <Label text="Gespeicherte Konfigurationen:" style="-fx-font-weight: bold; -fx-font-size: 12;"/>
+                <HBox spacing="10.0" alignment="CENTER_LEFT">
+                    <ComboBox fx:id="savedConfigsComboBox" promptText="Konfiguration wählen..." prefWidth="250"/>
+                    <Button text="Laden" onAction="#onLoadConfig"/>
+                    <Button text="Löschen" onAction="#onDeleteConfig"/>
+                    <Separator orientation="VERTICAL"/>
+                    <Button text="Aktuelle Zuordnung speichern" onAction="#onSaveConfig" style="-fx-font-weight: bold;"/>
+                </HBox>
+            </VBox>
+
+            <Separator/>
+
+            <ScrollPane fitToWidth="true" prefHeight="400">
+                <GridPane fx:id="fieldMappingGrid" hgap="10" vgap="10">
+                </GridPane>
+            </ScrollPane>
+
+            <HBox spacing="10" alignment="CENTER_RIGHT" style="-fx-padding: 10 0 0 0;">
+                <Button text="Zuordnung abbrechen" onAction="#onCancelMapping"/>
+                <Button text="SEPA XML generieren" onAction="#onGenerateSepa" style="-fx-font-weight: bold;"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+
+    <!-- Status Label -->
+    <Label fx:id="statusLabel" style="-fx-text-fill: #666;" wrapText="true"/>
+
+</VBox>
