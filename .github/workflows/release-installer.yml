@@ -44,21 +44,62 @@ jobs:
       - name: Create application image installer
         run: ./mvnw -B -ntp jpackage:jpackage
 
-      - name: Package installer image
+      - name: Create self-extracting launcher
         run: |
           set -euo pipefail
 
-          APP_DIR="${DISTRIBUTION_DIR}/EasySepa"
+          APP_NAME="EasySepa"
+          APP_DIR="${DISTRIBUTION_DIR}/${APP_NAME}"
           if [ ! -d "${APP_DIR}" ]; then
             echo "Expected application image at ${APP_DIR} but it was not found" >&2
             exit 1
           fi
 
-          VERSIONED_DIR="${DISTRIBUTION_DIR}/EasySepa-${VERSION}"
-          rm -rf "${VERSIONED_DIR}"
-          mv "${APP_DIR}" "${VERSIONED_DIR}"
+          INSTALLER="${DISTRIBUTION_DIR}/${APP_NAME}-${VERSION}-linux-x64.run"
+          rm -f "${INSTALLER}"
 
-          (cd "${DISTRIBUTION_DIR}" && rm -f "EasySepa-${VERSION}.zip" && zip -r "EasySepa-${VERSION}.zip" "EasySepa-${VERSION}")
+          WORK_DIR="$(mktemp -d)"
+          cleanup() {
+            rm -rf "${WORK_DIR}"
+          }
+          trap cleanup EXIT
+
+          tar -C "${APP_DIR}" -czf "${WORK_DIR}/payload.tar.gz" .
+
+          cat <<'EOF' > "${WORK_DIR}/launcher.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_NAME="EasySepa"
+APP_VERSION="__VERSION__"
+INSTALL_BASE="${EASYSEPA_HOME:-${HOME}/.local/share/${APP_NAME}}"
+INSTALL_DIR="${INSTALL_BASE}/${APP_VERSION}"
+PAYLOAD_LINE=__PAYLOAD_LINE__
+
+mkdir -p "${INSTALL_BASE}"
+
+if [ ! -x "${INSTALL_DIR}/bin/${APP_NAME}" ]; then
+  echo "Installing ${APP_NAME} ${APP_VERSION} to ${INSTALL_DIR}"
+  rm -rf "${INSTALL_DIR}"
+  mkdir -p "${INSTALL_DIR}"
+  tail -n +${PAYLOAD_LINE} "$0" | tar -xz -C "${INSTALL_DIR}"
+else
+  echo "Using existing ${APP_NAME} ${APP_VERSION} at ${INSTALL_DIR}"
+fi
+
+ln -sfn "${INSTALL_DIR}" "${INSTALL_BASE}/current"
+
+exec "${INSTALL_BASE}/current/bin/${APP_NAME}" "$@"
+exit $?
+__ARCHIVE_BELOW__
+EOF
+
+          PAYLOAD_LINE=$(( $(wc -l < "${WORK_DIR}/launcher.sh") + 1 ))
+          sed -i "s/__VERSION__/${VERSION}/" "${WORK_DIR}/launcher.sh"
+          sed -i "s/__PAYLOAD_LINE__/${PAYLOAD_LINE}/" "${WORK_DIR}/launcher.sh"
+
+          cat "${WORK_DIR}/launcher.sh" "${WORK_DIR}/payload.tar.gz" > "${INSTALLER}"
+          chmod +x "${INSTALLER}"
 
       - name: Stage runnable JAR
         run: |
@@ -89,9 +130,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: target/installer/EasySepa-${{ inputs.release_version }}.zip
-          asset_name: EasySepa-${{ inputs.release_version }}.zip
-          asset_content_type: application/zip
+          asset_path: target/installer/EasySepa-${{ inputs.release_version }}-linux-x64.run
+          asset_name: EasySepa-${{ inputs.release_version }}-linux-x64.run
+          asset_content_type: application/octet-stream
 
       - name: Upload runnable JAR
         uses: actions/upload-release-asset@v1
