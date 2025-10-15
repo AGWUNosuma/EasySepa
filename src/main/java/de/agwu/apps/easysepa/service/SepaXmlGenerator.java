@@ -4,7 +4,6 @@ import de.agwu.apps.easysepa.model.sepa.SepaFormat;
 import de.agwu.apps.easysepa.model.sepa.SepaTransaction;
 
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.FileOutputStream;
@@ -14,6 +13,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * Service to generate SEPA XML files using templates
@@ -24,7 +25,11 @@ public class SepaXmlGenerator {
     private final XmlTemplateEngine templateEngine;
 
     public SepaXmlGenerator() {
-        this.templateEngine = new XmlTemplateEngine();
+        this(new XmlTemplateEngine());
+    }
+
+    public SepaXmlGenerator(XmlTemplateEngine templateEngine) {
+        this.templateEngine = templateEngine;
     }
 
     /**
@@ -102,19 +107,20 @@ public class SepaXmlGenerator {
     }
 
     private String calculateControlSum(List<SepaTransaction> transactions) {
-        double totalAmount = 0.0;
-        
+        BigDecimal totalAmount = BigDecimal.ZERO;
+
         for (SepaTransaction tx : transactions) {
             String amountStr = tx.getField("amount");
             if (amountStr != null) {
                 try {
-                    totalAmount += Double.parseDouble(amountStr);
+                    BigDecimal amount = new BigDecimal(amountStr.trim());
+                    totalAmount = totalAmount.add(amount);
                 } catch (NumberFormatException e) {
                     // Skip invalid amounts
                 }
             }
         }
-        
-        return String.format("%.2f", totalAmount);
+
+        return totalAmount.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 }
