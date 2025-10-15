@@ -32,6 +32,12 @@ jobs:
       - name: Build runnable artifacts
         run: ./mvnw -B -ntp clean package
 
+      - name: Prepare installer output directory
+        run: |
+          set -euo pipefail
+          rm -rf "${DISTRIBUTION_DIR}"
+          mkdir -p "${DISTRIBUTION_DIR}"
+
       - name: Create application image installer
         run: ./mvnw -B -ntp jpackage:jpackage
 
@@ -46,9 +52,10 @@ jobs:
           fi
 
           VERSIONED_DIR="${DISTRIBUTION_DIR}/EasySepa-${VERSION}"
+          rm -rf "${VERSIONED_DIR}"
           mv "${APP_DIR}" "${VERSIONED_DIR}"
 
-          (cd "${DISTRIBUTION_DIR}" && zip -r "EasySepa-${VERSION}.zip" "EasySepa-${VERSION}")
+          (cd "${DISTRIBUTION_DIR}" && rm -f "EasySepa-${VERSION}.zip" && zip -r "EasySepa-${VERSION}.zip" "EasySepa-${VERSION}")
 
       - name: Stage runnable JAR
         run: |
