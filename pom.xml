@@ -133,73 +133,24 @@
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.6.1</version>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
                 <executions>
                     <execution>
-                        <id>copy-jpackage-dependencies</id>
                         <phase>package</phase>
                         <goals>
-                            <goal>copy-dependencies</goal>
+                            <goal>shade</goal>
                         </goals>
                         <configuration>
-                            <includeScope>runtime</includeScope>
-                            <outputDirectory>${project.build.directory}/jpackage-input/lib</outputDirectory>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>de.agwu.apps.easysepa.MainApp</mainClass>
+                                </transformer>
+                            </transformers>
                         </configuration>
                     </execution>
                 </executions>
-            </plugin>
-
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <version>3.1.0</version>
-                <executions>
-                    <execution>
-                        <id>prepare-jpackage-input</id>
-                        <phase>package</phase>
-                        <configuration>
-                            <target>
-                                <mkdir dir="${project.build.directory}/jpackage-input"/>
-                                <copy file="${project.build.directory}/${project.build.finalName}.jar"
-                                      tofile="${project.build.directory}/jpackage-input/${project.build.finalName}.jar"
-                                      overwrite="true"/>
-                            </target>
-                        </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <!-- Packaging via jpackage -->
-            <plugin>
-                <groupId>org.panteleyev</groupId>
-                <artifactId>jpackage-maven-plugin</artifactId>
-                <version>1.7.1</version>
-
-                <configuration>
-                    <!-- Basisinformationen -->
-                    <name>EasySepa</name>
-                    <vendor>AGWU</vendor>
-
-                    <!-- Input / Output -->
-                    <input>${project.build.directory}/jpackage-input</input>
-                    <destination>${project.build.directory}/installer</destination>
-
-                    <!-- Hauptklasse & JAR -->
-                    <mainJar>${project.build.finalName}.jar</mainJar>
-                    <mainClass>de.agwu.apps.easysepa.MainApp</mainClass>
-
-                    <!-- Pakettyp (plattformabhängig) -->
-                    <type>APP_IMAGE</type> <!-- Windows: EXE/MSI; Linux: APP_IMAGE/DEB/RPM -->
-
-                    <!-- Optional: weitere Einstellungen -->
-                    <appVersion>${project.version}</appVersion>
-                    <copyright>© 2025 AGWU</copyright>
-                    <description>Tool zum Erstellen von SEPA pain.001 XML-Dateien aus CSV</description>
-                </configuration>
             </plugin>
         </plugins>
     </build>

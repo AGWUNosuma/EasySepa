@@ -1,4 +1,4 @@
-name: Release EasySepa Installer
+name: Release EasySepa Package
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ inputs.release_version }}
-      DISTRIBUTION_DIR: target/installer
+      DIST_ROOT: target/dist
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,75 +35,13 @@ jobs:
       - name: Build runnable artifacts
         run: ./mvnw -B -ntp clean package
 
-      - name: Prepare installer output directory
-        run: |
-          set -euo pipefail
-          rm -rf "${DISTRIBUTION_DIR}"
-          mkdir -p "${DISTRIBUTION_DIR}"
-
-      - name: Create application image installer
-        run: ./mvnw -B -ntp jpackage:jpackage
-
-      - name: Create self-extracting launcher
+      - name: Prepare distribution layout
         run: |
           set -euo pipefail
 
-          APP_NAME="EasySepa"
-          APP_DIR="${DISTRIBUTION_DIR}/${APP_NAME}"
-          if [ ! -d "${APP_DIR}" ]; then
-            echo "Expected application image at ${APP_DIR} but it was not found" >&2
-            exit 1
-          fi
-
-          INSTALLER="${DISTRIBUTION_DIR}/${APP_NAME}-${VERSION}-linux-x64.run"
-          rm -f "${INSTALLER}"
-
-          WORK_DIR="$(mktemp -d)"
-          cleanup() {
-            rm -rf "${WORK_DIR}"
-          }
-          trap cleanup EXIT
-
-          tar -C "${APP_DIR}" -czf "${WORK_DIR}/payload.tar.gz" .
-
-          cat <<'EOF' > "${WORK_DIR}/launcher.sh"
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          APP_NAME="EasySepa"
-          APP_VERSION="__VERSION__"
-          INSTALL_BASE="${EASYSEPA_HOME:-${HOME}/.local/share/${APP_NAME}}"
-          INSTALL_DIR="${INSTALL_BASE}/${APP_VERSION}"
-          PAYLOAD_LINE=__PAYLOAD_LINE__
-
-          mkdir -p "${INSTALL_BASE}"
-
-          if [ ! -x "${INSTALL_DIR}/bin/${APP_NAME}" ]; then
-            echo "Installing ${APP_NAME} ${APP_VERSION} to ${INSTALL_DIR}"
-            rm -rf "${INSTALL_DIR}"
-            mkdir -p "${INSTALL_DIR}"
-            tail -n +${PAYLOAD_LINE} "$0" | tar -xz -C "${INSTALL_DIR}"
-          else
-            echo "Using existing ${APP_NAME} ${APP_VERSION} at ${INSTALL_DIR}"
-          fi
-
-          ln -sfn "${INSTALL_DIR}" "${INSTALL_BASE}/current"
-
-          exec "${INSTALL_BASE}/current/bin/${APP_NAME}" "$@"
-          exit $?
-          __ARCHIVE_BELOW__
-          EOF
-
-          PAYLOAD_LINE=$(( $(wc -l < "${WORK_DIR}/launcher.sh") + 1 ))
-          sed -i "s/__VERSION__/${VERSION}/" "${WORK_DIR}/launcher.sh"
-          sed -i "s/__PAYLOAD_LINE__/${PAYLOAD_LINE}/" "${WORK_DIR}/launcher.sh"
-
-          cat "${WORK_DIR}/launcher.sh" "${WORK_DIR}/payload.tar.gz" > "${INSTALLER}"
-          chmod +x "${INSTALLER}"
-
-      - name: Stage runnable JAR
-        run: |
-          set -euo pipefail
+          DIST_DIR="${DIST_ROOT}/EasySepa-${VERSION}"
+          rm -rf "${DIST_ROOT}"
+          mkdir -p "${DIST_DIR}/config"
 
           JAR_PATH="target/easysepa-${VERSION}.jar"
           if [ ! -f "${JAR_PATH}" ]; then
@@ -111,7 +49,65 @@ jobs:
             exit 1
           fi
 
-          cp "${JAR_PATH}" "target/EasySepa-${VERSION}.jar"
+          cp "${JAR_PATH}" "${DIST_DIR}/EasySepa-${VERSION}.jar"
+
+          cat <<'EOF' > "${DIST_DIR}/run.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JAVA_HOME="${SCRIPT_DIR}/runtime/linux"
+exec "${JAVA_HOME}/bin/java" -jar "${SCRIPT_DIR}/EasySepa-__VERSION__.jar" "$@"
+EOF
+          sed -i "s/__VERSION__/${VERSION}/" "${DIST_DIR}/run.sh"
+          chmod +x "${DIST_DIR}/run.sh"
+
+          cat <<'EOF' > "${DIST_DIR}/run.bat"
+@echo off
+setlocal enabledelayedexpansion
+set SCRIPT_DIR=%~dp0
+set JAVA_HOME=%SCRIPT_DIR%runtime\windows
+"%JAVA_HOME%\bin\java.exe" -jar "%SCRIPT_DIR%EasySepa-__VERSION__.jar" %*
+EOF
+          sed -i "s/__VERSION__/${VERSION}/" "${DIST_DIR}/run.bat"
+
+      - name: Bundle Java runtimes
+        run: |
+          set -euo pipefail
+
+          DIST_DIR="${DIST_ROOT}/EasySepa-${VERSION}"
+          LINUX_RUNTIME_DIR="${DIST_DIR}/runtime/linux"
+          WINDOWS_RUNTIME_DIR="${DIST_DIR}/runtime/windows"
+
+          mkdir -p "${LINUX_RUNTIME_DIR}" "${WINDOWS_RUNTIME_DIR}"
+
+          LINUX_URL="https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse?project=jre"
+          WINDOWS_URL="https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse?project=jre"
+
+          curl -fsSL "${LINUX_URL}" -o linux-jre.tar.gz
+          tar -xzf linux-jre.tar.gz --strip-components=1 -C "${LINUX_RUNTIME_DIR}"
+          rm linux-jre.tar.gz
+
+          curl -fsSL "${WINDOWS_URL}" -o windows-jre.zip
+          TMP_DIR="$(mktemp -d)"
+          unzip -q windows-jre.zip -d "${TMP_DIR}"
+          rm windows-jre.zip
+          FIRST_SUBDIR="$(find "${TMP_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          if [ -z "${FIRST_SUBDIR}" ]; then
+            echo "Failed to locate extracted Windows runtime" >&2
+            exit 1
+          fi
+          cp -a "${FIRST_SUBDIR}/." "${WINDOWS_RUNTIME_DIR}/"
+          rm -rf "${TMP_DIR}"
+
+      - name: Create release archive
+        run: |
+          set -euo pipefail
+
+          DIST_DIR="${DIST_ROOT}/EasySepa-${VERSION}"
+          ARCHIVE="target/EasySepa-${VERSION}.zip"
+          rm -f "${ARCHIVE}"
+          (cd "${DIST_ROOT}" && zip -r "../EasySepa-${VERSION}.zip" "EasySepa-${VERSION}")
 
       - name: Create GitHub release
         id: create_release
@@ -124,22 +120,12 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Upload installer asset
+      - name: Upload distribution archive
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: target/installer/EasySepa-${{ inputs.release_version }}-linux-x64.run
-          asset_name: EasySepa-${{ inputs.release_version }}-linux-x64.run
-          asset_content_type: application/octet-stream
-
-      - name: Upload runnable JAR
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: target/EasySepa-${{ inputs.release_version }}.jar
-          asset_name: EasySepa-${{ inputs.release_version }}.jar
-          asset_content_type: application/java-archive
+          asset_path: target/EasySepa-${{ inputs.release_version }}.zip
+          asset_name: EasySepa-${{ inputs.release_version }}.zip
+          asset_content_type: application/zip
