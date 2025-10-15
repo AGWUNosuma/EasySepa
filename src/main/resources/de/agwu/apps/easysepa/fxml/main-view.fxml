@@ -32,6 +32,8 @@
                     <Label text="Kodierung:"/>
                     <ComboBox fx:id="encodingComboBox" prefWidth="150">
                     </ComboBox>
+                    <Button fx:id="detectEncodingButton" text="Auto-Erkennung" onAction="#onDetectEncoding"
+                            disable="true" style="-fx-font-size: 10px;"/>
 
                     <Label text="Dezimaltrennzeichen:"/>
                     <ComboBox fx:id="decimalSeparatorComboBox" prefWidth="150">

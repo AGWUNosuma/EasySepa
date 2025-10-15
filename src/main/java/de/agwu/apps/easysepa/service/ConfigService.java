@@ -4,10 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import de.agwu.apps.easysepa.model.config.FieldMappingConfig;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -47,7 +45,8 @@ public class ConfigService {
         String fileName = sanitizeFileName(config.getConfigName()) + CONFIG_EXTENSION;
         File configFile = new File(CONFIG_DIR, fileName);
 
-        try (FileWriter writer = new FileWriter(configFile)) {
+        try (OutputStreamWriter writer = new OutputStreamWriter(
+                new FileOutputStream(configFile), StandardCharsets.UTF_8)) {
             gson.toJson(config, writer);
         }
     }
@@ -63,7 +62,8 @@ public class ConfigService {
             throw new IOException("Konfiguration nicht gefunden: " + configName);
         }
 
-        try (FileReader reader = new FileReader(configFile)) {
+        try (InputStreamReader reader = new InputStreamReader(
+                new FileInputStream(configFile), StandardCharsets.UTF_8)) {
             return gson.fromJson(reader, FieldMappingConfig.class);
         }
     }

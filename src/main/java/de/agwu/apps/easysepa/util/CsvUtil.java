@@ -59,6 +59,15 @@ public class CsvUtil {
     }
 
     /**
+     * Create CSV parser with given separator
+     */
+    public CSVParser createParser(char separator) {
+        return new CSVParserBuilder()
+                .withSeparator(separator)
+                .build();
+    }
+
+    /**
      * Normalize a decimal number from CSV format to SEPA format (dot as separator)
      * @param value The value from CSV
      * @param csvDecimalSeparator The decimal separator used in the CSV

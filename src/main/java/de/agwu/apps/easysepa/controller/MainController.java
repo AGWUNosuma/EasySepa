@@ -42,6 +42,9 @@ public class MainController {
     private Button loadButton;
 
     @FXML
+    private Button detectEncodingButton;
+
+    @FXML
     private TitledPane csvConfigPane;
 
     @FXML
@@ -72,6 +75,10 @@ public class MainController {
     private final FieldMappingService fieldMappingService = new FieldMappingService();
     private final UiUtil uiUtil = new UiUtil();
     private final ConfigService configService = new ConfigService();
+    private final de.agwu.apps.easysepa.service.SepaTransactionBuilder transactionBuilder = new de.agwu.apps.easysepa.service.SepaTransactionBuilder();
+    private final de.agwu.apps.easysepa.service.SepaXmlGenerator xmlGenerator = new de.agwu.apps.easysepa.service.SepaXmlGenerator();
+    private final de.agwu.apps.easysepa.service.XsdValidationService xsdValidator = new de.agwu.apps.easysepa.service.XsdValidationService();
+    private final de.agwu.apps.easysepa.util.EncodingDetector encodingDetector = new de.agwu.apps.easysepa.util.EncodingDetector();
 
     @FXML
     public void initialize() {
@@ -134,11 +141,57 @@ public class MainController {
             selectedFile = file;
             filePathField.setText(file.getAbsolutePath());
             loadButton.setDisable(false);
+            detectEncodingButton.setDisable(false);
             statusLabel.setText("Datei ausgewählt. Klicken Sie auf 'CSV laden'.");
 
             // Hide headers section when new file is selected
             headersPane.setVisible(false);
             headersPane.setManaged(false);
+        }
+    }
+
+    @FXML
+    protected void onDetectEncoding() {
+        if (selectedFile == null) {
+            setStatus("Keine Datei ausgewählt!", StatusType.ERROR);
+            return;
+        }
+
+        try {
+            String detectedEncoding = de.agwu.apps.easysepa.util.EncodingDetector.detectEncoding(selectedFile);
+            
+            // Set detected encoding in ComboBox
+            if (encodingComboBox.getItems().contains(detectedEncoding)) {
+                encodingComboBox.setValue(detectedEncoding);
+                setStatus("Encoding automatisch erkannt: " + detectedEncoding, StatusType.SUCCESS);
+            } else {
+                // Show preview with different encodings
+                Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                alert.setTitle("Encoding-Erkennung");
+                alert.setHeaderText("Erkanntes Encoding: " + detectedEncoding);
+                
+                StringBuilder content = new StringBuilder();
+                content.append("Vorschau der ersten Zeilen:\n\n");
+                
+                for (String enc : new String[]{"UTF-8", "ISO-8859-1", "Windows-1252"}) {
+                    content.append("--- ").append(enc).append(" ---\n");
+                    try {
+                        String preview = de.agwu.apps.easysepa.util.EncodingDetector.getEncodingPreview(selectedFile, enc);
+                        content.append(preview).append("\n");
+                    } catch (Exception e) {
+                        content.append("Fehler beim Lesen\n\n");
+                    }
+                }
+                
+                alert.setContentText(content.toString());
+                alert.showAndWait();
+                
+                encodingComboBox.setValue(detectedEncoding);
+                setStatus("Encoding erkannt: " + detectedEncoding + ". Bitte prüfen Sie die Vorschau.", StatusType.INFO);
+            }
+            
+        } catch (IOException e) {
+            setStatus("Fehler bei der Encoding-Erkennung: " + e.getMessage(), StatusType.ERROR);
         }
     }
 
@@ -324,8 +377,100 @@ public class MainController {
             return;
         }
 
-        SepaFormat selectedFormat = sepaFormatComboBox.getValue();
-        setStatus("SEPA XML (" + selectedFormat.getCode() + ") wird generiert... (Funktion folgt)", StatusType.WORKING);
+        try {
+            SepaFormat selectedFormat = sepaFormatComboBox.getValue();
+            setStatus("SEPA XML (" + selectedFormat.getCode() + ") wird generiert...", StatusType.WORKING);
+
+            // Collect global field values
+            Map<String, String> globalFieldValues = new HashMap<>();
+            for (de.agwu.apps.easysepa.model.sepa.SepaField field : currentFieldDefinition.getGlobalFields()) {
+                Control control = fieldMappingControls.get(field.getFieldName());
+                String value = uiUtil.getControlValue(control);
+                if (value != null && !value.trim().isEmpty()) {
+                    globalFieldValues.put(field.getFieldName(), value);
+                }
+            }
+
+            // Collect transaction field mappings
+            Map<String, String> columnMappings = new HashMap<>();
+            Map<String, String> defaultValues = new HashMap<>();
+            for (de.agwu.apps.easysepa.model.sepa.SepaField field : currentFieldDefinition.getTransactionFields()) {
+                ComboBox<String> combo = (ComboBox<String>) fieldMappingControls.get(field.getFieldName() + "_combo");
+                Control defaultField = fieldMappingControls.get(field.getFieldName() + "_default");
+
+                String selectedColumn = combo.getValue();
+                columnMappings.put(field.getFieldName(), selectedColumn);
+
+                if ("-- Fester Wert --".equals(selectedColumn)) {
+                    String value = uiUtil.getControlValue(defaultField);
+                    if (value != null && !value.trim().isEmpty()) {
+                        defaultValues.put(field.getFieldName(), value);
+                    }
+                }
+            }
+
+            // Build transactions from CSV
+            char separator = csvUtil.parseSeparator(separatorComboBox.getValue());
+            String encoding = encodingComboBox.getValue();
+            char decimalSeparator = csvUtil.parseDecimalSeparator(decimalSeparatorComboBox.getValue());
+
+            de.agwu.apps.easysepa.model.sepa.TransactionValidationResult validationResult = transactionBuilder.buildTransactions(
+                    selectedFile,
+                    separator,
+                    encoding,
+                    decimalSeparator,
+                    currentFieldDefinition,
+                    globalFieldValues,
+                    columnMappings,
+                    defaultValues
+            );
+
+            if (validationResult.getTotalCount() == 0) {
+                setStatus("Keine Transaktionen in der CSV-Datei gefunden.", StatusType.ERROR);
+                return;
+            }
+
+            // Show preview dialog
+            de.agwu.apps.easysepa.view.TransactionPreviewDialog dialog =
+                new de.agwu.apps.easysepa.view.TransactionPreviewDialog(validationResult, currentFieldDefinition);
+            Optional<File> result = dialog.showAndWait();
+
+            if (result.isPresent()) {
+                File outputFile = result.get();
+                // Only generate XML with valid transactions
+                xmlGenerator.generateXml(outputFile, selectedFormat, validationResult.getValidTransactions());
+
+                // Validate generated XML against XSD
+                de.agwu.apps.easysepa.service.XsdValidationService.ValidationResult xsdResult =
+                        xsdValidator.validateXml(outputFile, selectedFormat);
+
+                String statusMsg;
+                if (xsdResult.isValid()) {
+                    statusMsg = "SEPA XML erfolgreich gespeichert und validiert: " + outputFile.getName() +
+                                     " (" + validationResult.getValidTransactions().size() + " Transaktionen)";
+                    if (validationResult.hasInvalidTransactions()) {
+                        statusMsg += " | " + validationResult.getInvalidTransactions().size() + " ungültige Zeile(n) übersprungen";
+                    }
+                    setStatus(statusMsg, StatusType.SUCCESS);
+                } else {
+                    statusMsg = "WARNUNG: XML wurde gespeichert, ist aber NICHT XSD-konform: " + outputFile.getName();
+                    setStatus(statusMsg, StatusType.ERROR);
+
+                    // Show validation errors
+                    Alert alert = new Alert(Alert.AlertType.WARNING);
+                    alert.setTitle("XSD Validierung fehlgeschlagen");
+                    alert.setHeaderText("Die generierte XML-Datei entspricht nicht dem SEPA-Standard!");
+                    alert.setContentText("Validierungsfehler:\n\n" + xsdResult.getErrorsAsString());
+                    alert.showAndWait();
+                }
+            } else {
+                setStatus("SEPA XML Generierung abgebrochen.", StatusType.INFO);
+            }
+
+        } catch (Exception e) {
+            setStatus("Fehler beim Generieren der SEPA XML: " + e.getMessage(), StatusType.ERROR);
+            e.printStackTrace();
+        }
     }
 
     private List<String> validateRequiredFields() {
