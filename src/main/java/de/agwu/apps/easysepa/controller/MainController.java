@@ -4,12 +4,19 @@ import com.opencsv.exceptions.CsvException;
 import de.agwu.apps.easysepa.model.config.FieldMappingConfig;
 import de.agwu.apps.easysepa.model.sepa.SepaField;
 import de.agwu.apps.easysepa.model.sepa.SepaFormat;
+import de.agwu.apps.easysepa.model.sepa.TransactionValidationResult;
 import de.agwu.apps.easysepa.model.sepa.definition.ISepaFieldDefinition;
 import de.agwu.apps.easysepa.model.sepa.definition.SepaFieldDefinitionFactory;
 import de.agwu.apps.easysepa.service.ConfigService;
 import de.agwu.apps.easysepa.service.FieldMappingService;
+import de.agwu.apps.easysepa.service.SepaTransactionBuilder;
+import de.agwu.apps.easysepa.service.SepaXmlGenerator;
+import de.agwu.apps.easysepa.service.XsdValidationService;
 import de.agwu.apps.easysepa.util.CsvUtil;
+import de.agwu.apps.easysepa.util.FieldMappingConstants;
 import de.agwu.apps.easysepa.util.UiUtil;
+import de.agwu.apps.easysepa.view.TransactionPreviewDialog;
+import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
@@ -45,6 +52,9 @@ public class MainController {
     private Button detectEncodingButton;
 
     @FXML
+    private Button generateXmlButton;
+
+    @FXML
     private TitledPane csvConfigPane;
 
     @FXML
@@ -70,15 +80,42 @@ public class MainController {
     private Map<String, Control> fieldMappingControls = new HashMap<>();
     private ISepaFieldDefinition currentFieldDefinition;
 
+    private static final String FIXED_VALUE_OPTION = FieldMappingConstants.FIXED_VALUE_OPTION;
+
     // Services and Utilities
-    private final CsvUtil csvUtil = new CsvUtil();
-    private final FieldMappingService fieldMappingService = new FieldMappingService();
-    private final UiUtil uiUtil = new UiUtil();
-    private final ConfigService configService = new ConfigService();
-    private final de.agwu.apps.easysepa.service.SepaTransactionBuilder transactionBuilder = new de.agwu.apps.easysepa.service.SepaTransactionBuilder();
-    private final de.agwu.apps.easysepa.service.SepaXmlGenerator xmlGenerator = new de.agwu.apps.easysepa.service.SepaXmlGenerator();
-    private final de.agwu.apps.easysepa.service.XsdValidationService xsdValidator = new de.agwu.apps.easysepa.service.XsdValidationService();
-    private final de.agwu.apps.easysepa.util.EncodingDetector encodingDetector = new de.agwu.apps.easysepa.util.EncodingDetector();
+    private final CsvUtil csvUtil;
+    private final FieldMappingService fieldMappingService;
+    private final UiUtil uiUtil;
+    private final ConfigService configService;
+    private final SepaTransactionBuilder transactionBuilder;
+    private final SepaXmlGenerator xmlGenerator;
+    private final XsdValidationService xsdValidator;
+
+    public MainController() {
+        this(new CsvUtil(),
+             new FieldMappingService(),
+             new UiUtil(),
+             new ConfigService(),
+             new SepaTransactionBuilder(),
+             new SepaXmlGenerator(),
+             new XsdValidationService());
+    }
+
+    public MainController(CsvUtil csvUtil,
+                          FieldMappingService fieldMappingService,
+                          UiUtil uiUtil,
+                          ConfigService configService,
+                          SepaTransactionBuilder transactionBuilder,
+                          SepaXmlGenerator xmlGenerator,
+                          XsdValidationService xsdValidator) {
+        this.csvUtil = csvUtil;
+        this.fieldMappingService = fieldMappingService;
+        this.uiUtil = uiUtil;
+        this.configService = configService;
+        this.transactionBuilder = transactionBuilder;
+        this.xmlGenerator = xmlGenerator;
+        this.xsdValidator = xsdValidator;
+    }
 
     @FXML
     public void initialize() {
@@ -123,6 +160,7 @@ public class MainController {
         // Load available configurations
         refreshConfigList();
 
+        setCsvLoadingState(false);
         setStatus("Bitte wählen Sie eine CSV-Datei aus.", StatusType.INFO);
     }
 
@@ -140,8 +178,7 @@ public class MainController {
         if (file != null) {
             selectedFile = file;
             filePathField.setText(file.getAbsolutePath());
-            loadButton.setDisable(false);
-            detectEncodingButton.setDisable(false);
+            setCsvLoadingState(false);
             statusLabel.setText("Datei ausgewählt. Klicken Sie auf 'CSV laden'.");
 
             // Hide headers section when new file is selected
@@ -202,36 +239,67 @@ public class MainController {
             return;
         }
 
-        try {
-            char separator = csvUtil.parseSeparator(separatorComboBox.getValue());
-            String encoding = encodingComboBox.getValue();
+        final char separator = csvUtil.parseSeparator(separatorComboBox.getValue());
+        final String encoding = encodingComboBox.getValue();
 
-            csvHeaders = csvUtil.readHeaders(selectedFile, separator, encoding);
+        setStatus("CSV wird geladen...", StatusType.WORKING);
+        setCsvLoadingState(true);
+
+        Task<String[]> loadTask = new Task<>() {
+            @Override
+            protected String[] call() throws Exception {
+                return csvUtil.readHeaders(selectedFile, separator, encoding);
+            }
+        };
+
+        loadTask.setOnSucceeded(event -> {
+            setCsvLoadingState(false);
+            csvHeaders = loadTask.getValue();
 
             if (csvHeaders != null && csvHeaders.length > 0) {
-                // Display headers in ListView
-                headersListView.getItems().clear();
-                headersListView.getItems().addAll(csvHeaders);
+                headersListView.getItems().setAll(csvHeaders);
                 headersPane.setVisible(true);
                 headersPane.setManaged(true);
 
                 setStatus("CSV erfolgreich geladen! " + csvHeaders.length +
-                    " Spalten erkannt. Erstelle Feld-Zuordnung...", StatusType.SUCCESS);
+                        " Spalten erkannt. Erstelle Feld-Zuordnung...", StatusType.SUCCESS);
 
-                // Collapse CSV config after loading
                 csvConfigPane.setExpanded(false);
-
-                // Show field mapping
                 showFieldMapping();
             } else {
+                csvHeaders = null;
+                headersPane.setVisible(false);
+                headersPane.setManaged(false);
+                mappingPane.setVisible(false);
+                mappingPane.setManaged(false);
+                fieldMappingControls.clear();
+                fieldMappingGrid.getChildren().clear();
                 setStatus("CSV-Datei enthält keine Kopfzeile!", StatusType.ERROR);
             }
+        });
 
-        } catch (IOException e) {
-            setStatus("Fehler beim Lesen der Datei: " + e.getMessage(), StatusType.ERROR);
-        } catch (CsvException e) {
-            setStatus("Fehler beim Parsen der CSV: " + e.getMessage(), StatusType.ERROR);
-        }
+        loadTask.setOnFailed(event -> {
+            setCsvLoadingState(false);
+            csvHeaders = null;
+            currentFieldDefinition = null;
+            headersPane.setVisible(false);
+            headersPane.setManaged(false);
+            mappingPane.setVisible(false);
+            mappingPane.setManaged(false);
+            fieldMappingControls.clear();
+            fieldMappingGrid.getChildren().clear();
+
+            Throwable exception = loadTask.getException();
+            if (exception instanceof IOException ioException) {
+                setStatus("Fehler beim Lesen der Datei: " + ioException.getMessage(), StatusType.ERROR);
+            } else if (exception instanceof CsvException csvException) {
+                setStatus("Fehler beim Parsen der CSV: " + csvException.getMessage(), StatusType.ERROR);
+            } else {
+                setStatus("Unbekannter Fehler beim Laden der CSV: " + exception.getMessage(), StatusType.ERROR);
+            }
+        });
+
+        startBackgroundTask(loadTask);
     }
 
     private enum StatusType {
@@ -247,6 +315,24 @@ public class MainController {
             case INFO -> statusLabel.getStyleClass().add("status-info");
             case WORKING -> statusLabel.getStyleClass().add("status-working");
         }
+    }
+
+    private void setCsvLoadingState(boolean loading) {
+        boolean disable = loading || selectedFile == null;
+        loadButton.setDisable(disable);
+        detectEncodingButton.setDisable(disable);
+    }
+
+    private void setProcessingState(boolean processing) {
+        if (generateXmlButton != null) {
+            generateXmlButton.setDisable(processing);
+        }
+    }
+
+    private void startBackgroundTask(Task<?> task) {
+        Thread thread = new Thread(task);
+        thread.setDaemon(true);
+        thread.start();
     }
 
     public String[] getCsvHeaders() {
@@ -332,7 +418,7 @@ public class MainController {
 
             // Link combo and default field
             comboBox.setOnAction(e -> {
-                if ("-- Fester Wert --".equals(comboBox.getValue())) {
+                if (FIXED_VALUE_OPTION.equals(comboBox.getValue())) {
                     defaultField.setDisable(false);
                 } else {
                     defaultField.setDisable(true);
@@ -377,100 +463,141 @@ public class MainController {
             return;
         }
 
-        try {
-            SepaFormat selectedFormat = sepaFormatComboBox.getValue();
-            setStatus("SEPA XML (" + selectedFormat.getCode() + ") wird generiert...", StatusType.WORKING);
+        SepaFormat selectedFormat = sepaFormatComboBox.getValue();
 
-            // Collect global field values
-            Map<String, String> globalFieldValues = new HashMap<>();
-            for (de.agwu.apps.easysepa.model.sepa.SepaField field : currentFieldDefinition.getGlobalFields()) {
-                Control control = fieldMappingControls.get(field.getFieldName());
-                String value = uiUtil.getControlValue(control);
+        // Collect global field values
+        Map<String, String> globalFieldValues = new HashMap<>();
+        for (SepaField field : currentFieldDefinition.getGlobalFields()) {
+            Control control = fieldMappingControls.get(field.getFieldName());
+            String value = uiUtil.getControlValue(control);
+            if (value != null && !value.trim().isEmpty()) {
+                globalFieldValues.put(field.getFieldName(), value);
+            }
+        }
+
+        // Collect transaction field mappings
+        Map<String, String> columnMappings = new HashMap<>();
+        Map<String, String> defaultValues = new HashMap<>();
+        for (SepaField field : currentFieldDefinition.getTransactionFields()) {
+            @SuppressWarnings("unchecked")
+            ComboBox<String> combo = (ComboBox<String>) fieldMappingControls.get(field.getFieldName() + "_combo");
+            Control defaultField = fieldMappingControls.get(field.getFieldName() + "_default");
+
+            String selectedColumn = combo != null ? combo.getValue() : null;
+            columnMappings.put(field.getFieldName(), selectedColumn);
+
+            if (FIXED_VALUE_OPTION.equals(selectedColumn)) {
+                String value = uiUtil.getControlValue(defaultField);
                 if (value != null && !value.trim().isEmpty()) {
-                    globalFieldValues.put(field.getFieldName(), value);
+                    defaultValues.put(field.getFieldName(), value);
                 }
             }
+        }
 
-            // Collect transaction field mappings
-            Map<String, String> columnMappings = new HashMap<>();
-            Map<String, String> defaultValues = new HashMap<>();
-            for (de.agwu.apps.easysepa.model.sepa.SepaField field : currentFieldDefinition.getTransactionFields()) {
-                ComboBox<String> combo = (ComboBox<String>) fieldMappingControls.get(field.getFieldName() + "_combo");
-                Control defaultField = fieldMappingControls.get(field.getFieldName() + "_default");
+        final char separator = csvUtil.parseSeparator(separatorComboBox.getValue());
+        final String encoding = encodingComboBox.getValue();
+        final char decimalSeparator = csvUtil.parseDecimalSeparator(decimalSeparatorComboBox.getValue());
 
-                String selectedColumn = combo.getValue();
-                columnMappings.put(field.getFieldName(), selectedColumn);
+        setProcessingState(true);
+        setStatus("SEPA XML (" + selectedFormat.getCode() + ") wird vorbereitet...", StatusType.WORKING);
 
-                if ("-- Fester Wert --".equals(selectedColumn)) {
-                    String value = uiUtil.getControlValue(defaultField);
-                    if (value != null && !value.trim().isEmpty()) {
-                        defaultValues.put(field.getFieldName(), value);
-                    }
-                }
+        Task<TransactionValidationResult> buildTask = new Task<>() {
+            @Override
+            protected TransactionValidationResult call() throws Exception {
+                return transactionBuilder.buildTransactions(
+                        selectedFile,
+                        separator,
+                        encoding,
+                        decimalSeparator,
+                        currentFieldDefinition,
+                        globalFieldValues,
+                        columnMappings,
+                        defaultValues
+                );
             }
+        };
 
-            // Build transactions from CSV
-            char separator = csvUtil.parseSeparator(separatorComboBox.getValue());
-            String encoding = encodingComboBox.getValue();
-            char decimalSeparator = csvUtil.parseDecimalSeparator(decimalSeparatorComboBox.getValue());
-
-            de.agwu.apps.easysepa.model.sepa.TransactionValidationResult validationResult = transactionBuilder.buildTransactions(
-                    selectedFile,
-                    separator,
-                    encoding,
-                    decimalSeparator,
-                    currentFieldDefinition,
-                    globalFieldValues,
-                    columnMappings,
-                    defaultValues
-            );
+        buildTask.setOnSucceeded(event -> {
+            TransactionValidationResult validationResult = buildTask.getValue();
 
             if (validationResult.getTotalCount() == 0) {
                 setStatus("Keine Transaktionen in der CSV-Datei gefunden.", StatusType.ERROR);
+                setProcessingState(false);
                 return;
             }
 
-            // Show preview dialog
-            de.agwu.apps.easysepa.view.TransactionPreviewDialog dialog =
-                new de.agwu.apps.easysepa.view.TransactionPreviewDialog(validationResult, currentFieldDefinition);
+            TransactionPreviewDialog dialog = new TransactionPreviewDialog(validationResult, currentFieldDefinition);
             Optional<File> result = dialog.showAndWait();
 
-            if (result.isPresent()) {
-                File outputFile = result.get();
-                // Only generate XML with valid transactions
-                xmlGenerator.generateXml(outputFile, selectedFormat, validationResult.getValidTransactions());
-
-                // Validate generated XML against XSD
-                de.agwu.apps.easysepa.service.XsdValidationService.ValidationResult xsdResult =
-                        xsdValidator.validateXml(outputFile, selectedFormat);
-
-                String statusMsg;
-                if (xsdResult.isValid()) {
-                    statusMsg = "SEPA XML erfolgreich gespeichert und validiert: " + outputFile.getName() +
-                                     " (" + validationResult.getValidTransactions().size() + " Transaktionen)";
-                    if (validationResult.hasInvalidTransactions()) {
-                        statusMsg += " | " + validationResult.getInvalidTransactions().size() + " ungültige Zeile(n) übersprungen";
-                    }
-                    setStatus(statusMsg, StatusType.SUCCESS);
-                } else {
-                    statusMsg = "WARNUNG: XML wurde gespeichert, ist aber NICHT XSD-konform: " + outputFile.getName();
-                    setStatus(statusMsg, StatusType.ERROR);
-
-                    // Show validation errors
-                    Alert alert = new Alert(Alert.AlertType.WARNING);
-                    alert.setTitle("XSD Validierung fehlgeschlagen");
-                    alert.setHeaderText("Die generierte XML-Datei entspricht nicht dem SEPA-Standard!");
-                    alert.setContentText("Validierungsfehler:\n\n" + xsdResult.getErrorsAsString());
-                    alert.showAndWait();
-                }
-            } else {
+            if (result.isEmpty()) {
                 setStatus("SEPA XML Generierung abgebrochen.", StatusType.INFO);
+                setProcessingState(false);
+                return;
             }
 
-        } catch (Exception e) {
-            setStatus("Fehler beim Generieren der SEPA XML: " + e.getMessage(), StatusType.ERROR);
-            e.printStackTrace();
-        }
+            File outputFile = result.get();
+            runXmlGenerationTask(outputFile, selectedFormat, validationResult);
+        });
+
+        buildTask.setOnFailed(event -> {
+            Throwable exception = buildTask.getException();
+            if (exception instanceof IOException ioException) {
+                setStatus("Fehler beim Lesen der Datei: " + ioException.getMessage(), StatusType.ERROR);
+            } else if (exception instanceof CsvException csvException) {
+                setStatus("Fehler beim Parsen der CSV: " + csvException.getMessage(), StatusType.ERROR);
+            } else {
+                setStatus("Fehler beim Erstellen der Transaktionen: " + exception.getMessage(), StatusType.ERROR);
+            }
+            setProcessingState(false);
+        });
+
+        startBackgroundTask(buildTask);
+    }
+
+    private void runXmlGenerationTask(File outputFile, SepaFormat format, TransactionValidationResult validationResult) {
+        setStatus("SEPA XML (" + format.getCode() + ") wird generiert...", StatusType.WORKING);
+
+        Task<XsdValidationService.ValidationResult> generationTask = new Task<>() {
+            @Override
+            protected XsdValidationService.ValidationResult call() throws Exception {
+                xmlGenerator.generateXml(outputFile, format, validationResult.getValidTransactions());
+                return xsdValidator.validateXml(outputFile, format);
+            }
+        };
+
+        generationTask.setOnSucceeded(event -> {
+            XsdValidationService.ValidationResult xsdResult = generationTask.getValue();
+            String statusMsg;
+            if (xsdResult.isValid()) {
+                statusMsg = "SEPA XML erfolgreich gespeichert und validiert: " + outputFile.getName() +
+                        " (" + validationResult.getValidTransactions().size() + " Transaktionen)";
+                if (validationResult.hasInvalidTransactions()) {
+                    statusMsg += " | " + validationResult.getInvalidTransactions().size() + " ungültige Zeile(n) übersprungen";
+                }
+                setStatus(statusMsg, StatusType.SUCCESS);
+            } else {
+                statusMsg = "WARNUNG: XML wurde gespeichert, ist aber NICHT XSD-konform: " + outputFile.getName();
+                setStatus(statusMsg, StatusType.ERROR);
+                showValidationAlert(xsdResult);
+            }
+            setProcessingState(false);
+        });
+
+        generationTask.setOnFailed(event -> {
+            Throwable exception = generationTask.getException();
+            setStatus("Fehler beim Generieren der SEPA XML: " + exception.getMessage(), StatusType.ERROR);
+            setProcessingState(false);
+        });
+
+        startBackgroundTask(generationTask);
+    }
+
+    private void showValidationAlert(XsdValidationService.ValidationResult xsdResult) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("XSD Validierung fehlgeschlagen");
+        alert.setHeaderText("Die generierte XML-Datei entspricht nicht dem SEPA-Standard!");
+        alert.setContentText("Validierungsfehler:\n\n" + xsdResult.getErrorsAsString());
+        alert.showAndWait();
     }
 
     private List<String> validateRequiredFields() {
@@ -491,7 +618,7 @@ public class MainController {
                 ComboBox<String> combo = (ComboBox<String>) fieldMappingControls.get(field.getFieldName() + "_combo");
                 Control defaultField = fieldMappingControls.get(field.getFieldName() + "_default");
 
-                if ("-- Fester Wert --".equals(combo.getValue())) {
+                if (FIXED_VALUE_OPTION.equals(combo.getValue())) {
                     String value = uiUtil.getControlValue(defaultField);
                     if (value == null || value.trim().isEmpty()) {
                         missingFields.add(field.getDisplayName());
@@ -560,7 +687,7 @@ public class MainController {
             String selectedColumn = combo.getValue();
             config.getTransactionFieldMappings().put(field.getFieldName(), selectedColumn);
 
-            if ("-- Fester Wert --".equals(selectedColumn)) {
+            if (FIXED_VALUE_OPTION.equals(selectedColumn)) {
                 String value = uiUtil.getControlValue(defaultField);
                 if (value != null && !value.trim().isEmpty()) {
                     config.getTransactionFieldDefaultValues().put(field.getFieldName(), value);
