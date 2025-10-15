@@ -52,23 +52,23 @@ jobs:
           cp "${JAR_PATH}" "${DIST_DIR}/EasySepa-${VERSION}.jar"
 
           cat <<'EOF' > "${DIST_DIR}/run.sh"
-#!/usr/bin/env bash
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JAVA_HOME="${SCRIPT_DIR}/runtime/linux"
-exec "${JAVA_HOME}/bin/java" -jar "${SCRIPT_DIR}/EasySepa-__VERSION__.jar" "$@"
-EOF
-          sed -i "s/__VERSION__/${VERSION}/" "${DIST_DIR}/run.sh"
-          chmod +x "${DIST_DIR}/run.sh"
-
-          cat <<'EOF' > "${DIST_DIR}/run.bat"
-@echo off
-setlocal enabledelayedexpansion
-set SCRIPT_DIR=%~dp0
-set JAVA_HOME=%SCRIPT_DIR%runtime\windows
-"%JAVA_HOME%\bin\java.exe" -jar "%SCRIPT_DIR%EasySepa-__VERSION__.jar" %*
-EOF
+          #!/usr/bin/env bash
+          set -euo pipefail
+          
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          JAVA_HOME="${SCRIPT_DIR}/runtime/linux"
+          exec "${JAVA_HOME}/bin/java" -jar "${SCRIPT_DIR}/EasySepa-__VERSION__.jar" "$@"
+          EOF
+                    sed -i "s/__VERSION__/${VERSION}/" "${DIST_DIR}/run.sh"
+                    chmod +x "${DIST_DIR}/run.sh"
+          
+                    cat <<'EOF' > "${DIST_DIR}/run.bat"
+          @echo off
+          setlocal enabledelayedexpansion
+          set SCRIPT_DIR=%~dp0
+          set JAVA_HOME=%SCRIPT_DIR%runtime\windows
+          "%JAVA_HOME%\bin\java.exe" -jar "%SCRIPT_DIR%EasySepa-__VERSION__.jar" %*
+          EOF
           sed -i "s/__VERSION__/${VERSION}/" "${DIST_DIR}/run.bat"
 
       - name: Bundle Java runtimes
