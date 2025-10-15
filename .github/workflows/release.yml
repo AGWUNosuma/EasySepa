@@ -18,6 +18,8 @@ jobs:
     env:
       VERSION: ${{ inputs.release_version }}
       DIST_ROOT: target/dist
+      LIBERICA_VERSION: '21.0.5+11'
+      LIBERICA_BASE_URL: https://download.bell-sw.com/java
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -71,7 +73,7 @@ jobs:
             > "${DIST_DIR}/run.bat"
           sed -i "s/__VERSION__/${VERSION}/" "${DIST_DIR}/run.bat"
 
-      - name: Bundle Java runtimes
+      - name: Bundle Java runtimes with JavaFX support
         run: |
           set -euo pipefail
 
@@ -81,8 +83,9 @@ jobs:
 
           mkdir -p "${LINUX_RUNTIME_DIR}" "${WINDOWS_RUNTIME_DIR}"
 
-          LINUX_URL="https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse"
-          WINDOWS_URL="https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse"
+          BASE_URL="${LIBERICA_BASE_URL}/${LIBERICA_VERSION}"
+          LINUX_URL="${BASE_URL}/bellsoft-jre${LIBERICA_VERSION}-linux-amd64-full.tar.gz"
+          WINDOWS_URL="${BASE_URL}/bellsoft-jre${LIBERICA_VERSION}-windows-amd64-full.zip"
 
           curl -fsSL "${LINUX_URL}" -o linux-jre.tar.gz
           tar -xzf linux-jre.tar.gz --strip-components=1 -C "${LINUX_RUNTIME_DIR}"
