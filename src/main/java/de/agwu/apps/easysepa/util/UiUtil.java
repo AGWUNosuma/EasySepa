@@ -74,9 +74,9 @@ public class UiUtil {
      */
     public ComboBox<String> createColumnComboBox(String[] csvHeaders) {
         ComboBox<String> comboBox = new ComboBox<>();
-        comboBox.getItems().add("-- Fester Wert --");
+        comboBox.getItems().add(FieldMappingConstants.FIXED_VALUE_OPTION);
         comboBox.getItems().addAll(csvHeaders);
-        comboBox.setValue("-- Fester Wert --");
+        comboBox.setValue(FieldMappingConstants.FIXED_VALUE_OPTION);
         comboBox.setPrefWidth(200);
         return comboBox;
     }

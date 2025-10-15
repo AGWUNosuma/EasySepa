@@ -94,7 +94,7 @@
 
             <HBox spacing="10" alignment="CENTER_RIGHT" style="-fx-padding: 10 0 0 0;">
                 <Button text="Zuordnung abbrechen" onAction="#onCancelMapping"/>
-                <Button text="SEPA XML generieren" onAction="#onGenerateSepa" style="-fx-font-weight: bold;"/>
+                <Button fx:id="generateXmlButton" text="SEPA XML generieren" onAction="#onGenerateSepa" style="-fx-font-weight: bold;"/>
             </HBox>
         </VBox>
     </TitledPane>

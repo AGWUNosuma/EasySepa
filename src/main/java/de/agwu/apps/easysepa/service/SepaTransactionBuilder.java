@@ -8,6 +8,7 @@ import de.agwu.apps.easysepa.model.sepa.SepaTransaction;
 import de.agwu.apps.easysepa.model.sepa.TransactionValidationResult;
 import de.agwu.apps.easysepa.model.sepa.definition.ISepaFieldDefinition;
 import de.agwu.apps.easysepa.util.CsvUtil;
+import de.agwu.apps.easysepa.util.FieldMappingConstants;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -15,15 +16,25 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 
 /**
  * Service to build SEPA transactions from CSV data
  */
 public class SepaTransactionBuilder {
 
-    private final CsvUtil csvUtil = new CsvUtil();
+    private final CsvUtil csvUtil;
+
+    public SepaTransactionBuilder() {
+        this(new CsvUtil());
+    }
+
+    public SepaTransactionBuilder(CsvUtil csvUtil) {
+        this.csvUtil = csvUtil;
+    }
 
     /**
      * Build and validate SEPA transactions from CSV file
@@ -57,74 +68,95 @@ public class SepaTransactionBuilder {
                      .withCSVParser(csvUtil.createParser(separator))
                      .build()) {
 
-            List<String[]> allRows = reader.readAll();
-            if (allRows.isEmpty()) {
+            String[] headers = reader.readNext();
+            if (headers == null) {
                 return result;
             }
 
-            String[] headers = allRows.get(0);
+            Map<String, Integer> headerIndex = buildHeaderIndex(headers);
+            Map<String, Boolean> amountFields = precomputeAmountFields(fieldDefinition);
 
-            // Process each data row
-            for (int i = 1; i < allRows.size(); i++) {
-                String[] row = allRows.get(i);
-                SepaTransaction transaction = new SepaTransaction(i);
+            String[] row;
+            int dataRowNumber = 1;
+            while ((row = reader.readNext()) != null) {
+                SepaTransaction transaction = new SepaTransaction(dataRowNumber);
                 List<String> errors = new ArrayList<>();
 
-                // Add global fields
-                for (SepaField field : fieldDefinition.getGlobalFields()) {
-                    String value = globalFieldValues.get(field.getFieldName());
-                    if (value != null) {
-                        transaction.setField(field.getFieldName(), value);
-                    }
-                }
+                addGlobalFields(fieldDefinition, globalFieldValues, transaction);
+                populateTransactionFields(fieldDefinition, columnMappings, defaultValues, decimalSeparator,
+                        headerIndex, row, transaction, errors, amountFields);
 
-                // Add transaction fields
-                for (SepaField field : fieldDefinition.getTransactionFields()) {
-                    String fieldName = field.getFieldName();
-                    String value = null;
-
-                    // Check if mapped to CSV column
-                    String mappedColumn = columnMappings.get(fieldName);
-                    if (mappedColumn != null && !"-- Fester Wert --".equals(mappedColumn)) {
-                        // Find column index
-                        int columnIndex = -1;
-                        for (int j = 0; j < headers.length; j++) {
-                            if (headers[j].equals(mappedColumn)) {
-                                columnIndex = j;
-                                break;
-                            }
-                        }
-
-                        if (columnIndex >= 0 && columnIndex < row.length) {
-                            value = row[columnIndex];
-
-                            // Normalize decimal values for amount fields
-                            if (fieldName.toLowerCase().contains("amount") && value != null) {
-                                value = csvUtil.normalizeDecimalValue(value, decimalSeparator);
-                            }
-                        }
-                    } else {
-                        // Use default value
-                        value = defaultValues.get(fieldName);
-                    }
-
-                    if (value != null && !value.trim().isEmpty()) {
-                        transaction.setField(fieldName, value);
-                    } else if (field.isRequired()) {
-                        // Required field is missing
-                        errors.add(field.getDisplayName() + " fehlt");
-                    }
-                }
-
-                // Validate transaction
                 if (errors.isEmpty()) {
                     result.addValidTransaction(transaction);
                 } else {
                     result.addInvalidTransaction(transaction, errors);
                 }
+                dataRowNumber++;
             }
         }
 
         return result;
+    }
+
+    private Map<String, Integer> buildHeaderIndex(String[] headers) {
+        Map<String, Integer> headerIndex = new HashMap<>();
+        for (int i = 0; i < headers.length; i++) {
+            headerIndex.put(headers[i], i);
+        }
+        return headerIndex;
+    }
+
+    private Map<String, Boolean> precomputeAmountFields(ISepaFieldDefinition fieldDefinition) {
+        Map<String, Boolean> amountFields = new HashMap<>();
+        for (SepaField field : fieldDefinition.getTransactionFields()) {
+            amountFields.put(field.getFieldName(), field.getFieldName().toLowerCase(Locale.ROOT).contains("amount"));
+        }
+        return amountFields;
+    }
+
+    private void addGlobalFields(ISepaFieldDefinition fieldDefinition,
+                                 Map<String, String> globalFieldValues,
+                                 SepaTransaction transaction) {
+        for (SepaField field : fieldDefinition.getGlobalFields()) {
+            String value = globalFieldValues.get(field.getFieldName());
+            if (value != null) {
+                transaction.setField(field.getFieldName(), value);
+            }
+        }
+    }
+
+    private void populateTransactionFields(ISepaFieldDefinition fieldDefinition,
+                                           Map<String, String> columnMappings,
+                                           Map<String, String> defaultValues,
+                                           char decimalSeparator,
+                                           Map<String, Integer> headerIndex,
+                                           String[] row,
+                                           SepaTransaction transaction,
+                                           List<String> errors,
+                                           Map<String, Boolean> amountFields) {
+
+        for (SepaField field : fieldDefinition.getTransactionFields()) {
+            String fieldName = field.getFieldName();
+            String value = null;
+
+            String mappedColumn = columnMappings.get(fieldName);
+            if (mappedColumn != null && !FieldMappingConstants.FIXED_VALUE_OPTION.equals(mappedColumn)) {
+                Integer columnIndex = headerIndex.get(mappedColumn);
+                if (columnIndex != null && columnIndex < row.length) {
+                    value = row[columnIndex];
+                    if (value != null && Boolean.TRUE.equals(amountFields.get(fieldName))) {
+                        value = csvUtil.normalizeDecimalValue(value, decimalSeparator);
+                    }
+                }
+            } else {
+                value = defaultValues.get(fieldName);
+            }
+
+            if (value != null && !value.trim().isEmpty()) {
+                transaction.setField(fieldName, value);
+            } else if (field.isRequired()) {
+                errors.add(field.getDisplayName() + " fehlt");
+            }
+        }
     }
 }

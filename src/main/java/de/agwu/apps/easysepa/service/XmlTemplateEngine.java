@@ -29,7 +29,12 @@ public class XmlTemplateEngine {
      */
     public String loadTemplate(String templateName) throws IOException {
         String resourcePath = "/de/agwu/apps/easysepa/templates/" + templateName + ".xml";
-        try (InputStream is = getClass().getResourceAsStream(resourcePath);
+        InputStream resourceStream = getClass().getResourceAsStream(resourcePath);
+        if (resourceStream == null) {
+            throw new IOException("Template not found at path: " + resourcePath);
+        }
+
+        try (InputStream is = resourceStream;
              BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
             return reader.lines().collect(Collectors.joining("\n"));
         }

@@ -74,16 +74,4 @@ public class FieldMappingService {
         return null; // No match found
     }
 
-    /**
-     * Check if both field name AND header name contain any of the keywords
-     */
-    private boolean matchesAnyKeyword(String fieldName, String headerName, String... keywords) {
-        for (String keyword : keywords) {
-            // Both must contain the keyword for a match
-            if (fieldName.contains(keyword) && headerName.contains(keyword)) {
-                return true;
-            }
-        }
-        return false;
-    }
 }
