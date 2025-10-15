@@ -1,0 +1,94 @@
+name: Release EasySepa Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Version number for the release (e.g. 1.2.3)'
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.release_version }}
+      DISTRIBUTION_DIR: target/installer
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Temurin JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Set Maven project version
+        run: ./mvnw -B -ntp versions:set -DnewVersion=${VERSION} -DgenerateBackupPoms=false
+
+      - name: Build runnable artifacts
+        run: ./mvnw -B -ntp clean package
+
+      - name: Create application image installer
+        run: ./mvnw -B -ntp jpackage:jpackage
+
+      - name: Package installer image
+        run: |
+          set -euo pipefail
+
+          APP_DIR="${DISTRIBUTION_DIR}/EasySepa"
+          if [ ! -d "${APP_DIR}" ]; then
+            echo "Expected application image at ${APP_DIR} but it was not found" >&2
+            exit 1
+          fi
+
+          VERSIONED_DIR="${DISTRIBUTION_DIR}/EasySepa-${VERSION}"
+          mv "${APP_DIR}" "${VERSIONED_DIR}"
+
+          (cd "${DISTRIBUTION_DIR}" && zip -r "EasySepa-${VERSION}.zip" "EasySepa-${VERSION}")
+
+      - name: Stage runnable JAR
+        run: |
+          set -euo pipefail
+
+          JAR_PATH="target/easysepa-${VERSION}.jar"
+          if [ ! -f "${JAR_PATH}" ]; then
+            echo "Packaged JAR ${JAR_PATH} was not found" >&2
+            exit 1
+          fi
+
+          cp "${JAR_PATH}" "target/EasySepa-${VERSION}.jar"
+
+      - name: Create GitHub release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ inputs.release_version }}
+          release_name: EasySepa v${{ inputs.release_version }}
+          draft: false
+          prerelease: false
+
+      - name: Upload installer asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: target/installer/EasySepa-${{ inputs.release_version }}.zip
+          asset_name: EasySepa-${{ inputs.release_version }}.zip
+          asset_content_type: application/zip
+
+      - name: Upload runnable JAR
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: target/EasySepa-${{ inputs.release_version }}.jar
+          asset_name: EasySepa-${{ inputs.release_version }}.jar
+          asset_content_type: application/java-archive
