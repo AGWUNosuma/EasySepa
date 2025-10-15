@@ -67,32 +67,32 @@ jobs:
           tar -C "${APP_DIR}" -czf "${WORK_DIR}/payload.tar.gz" .
 
           cat <<'EOF' > "${WORK_DIR}/launcher.sh"
-#!/usr/bin/env bash
-set -euo pipefail
+          #!/usr/bin/env bash
+          set -euo pipefail
 
-APP_NAME="EasySepa"
-APP_VERSION="__VERSION__"
-INSTALL_BASE="${EASYSEPA_HOME:-${HOME}/.local/share/${APP_NAME}}"
-INSTALL_DIR="${INSTALL_BASE}/${APP_VERSION}"
-PAYLOAD_LINE=__PAYLOAD_LINE__
+          APP_NAME="EasySepa"
+          APP_VERSION="__VERSION__"
+          INSTALL_BASE="${EASYSEPA_HOME:-${HOME}/.local/share/${APP_NAME}}"
+          INSTALL_DIR="${INSTALL_BASE}/${APP_VERSION}"
+          PAYLOAD_LINE=__PAYLOAD_LINE__
 
-mkdir -p "${INSTALL_BASE}"
+          mkdir -p "${INSTALL_BASE}"
 
-if [ ! -x "${INSTALL_DIR}/bin/${APP_NAME}" ]; then
-  echo "Installing ${APP_NAME} ${APP_VERSION} to ${INSTALL_DIR}"
-  rm -rf "${INSTALL_DIR}"
-  mkdir -p "${INSTALL_DIR}"
-  tail -n +${PAYLOAD_LINE} "$0" | tar -xz -C "${INSTALL_DIR}"
-else
-  echo "Using existing ${APP_NAME} ${APP_VERSION} at ${INSTALL_DIR}"
-fi
+          if [ ! -x "${INSTALL_DIR}/bin/${APP_NAME}" ]; then
+            echo "Installing ${APP_NAME} ${APP_VERSION} to ${INSTALL_DIR}"
+            rm -rf "${INSTALL_DIR}"
+            mkdir -p "${INSTALL_DIR}"
+            tail -n +${PAYLOAD_LINE} "$0" | tar -xz -C "${INSTALL_DIR}"
+          else
+            echo "Using existing ${APP_NAME} ${APP_VERSION} at ${INSTALL_DIR}"
+          fi
 
-ln -sfn "${INSTALL_DIR}" "${INSTALL_BASE}/current"
+          ln -sfn "${INSTALL_DIR}" "${INSTALL_BASE}/current"
 
-exec "${INSTALL_BASE}/current/bin/${APP_NAME}" "$@"
-exit $?
-__ARCHIVE_BELOW__
-EOF
+          exec "${INSTALL_BASE}/current/bin/${APP_NAME}" "$@"
+          exit $?
+          __ARCHIVE_BELOW__
+          EOF
 
           PAYLOAD_LINE=$(( $(wc -l < "${WORK_DIR}/launcher.sh") + 1 ))
           sed -i "s/__VERSION__/${VERSION}/" "${WORK_DIR}/launcher.sh"
