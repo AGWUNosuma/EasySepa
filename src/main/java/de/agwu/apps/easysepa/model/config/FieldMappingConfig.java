@@ -13,14 +13,14 @@ public class FieldMappingConfig {
     private String csvSeparator;
     private String csvEncoding;
     private String decimalSeparator;
+    private int version;
 
     // Maps field name to CSV column name (or fixed value indicator)
     private Map<String, String> globalFieldMappings = new HashMap<>();
-    private Map<String, String> transactionFieldMappings = new HashMap<>();
+    private Map<String, FieldMappingSelection> transactionFieldMappings = new HashMap<>();
 
     // Maps field name to fixed/default value (if not from CSV)
     private Map<String, String> globalFieldDefaultValues = new HashMap<>();
-    private Map<String, String> transactionFieldDefaultValues = new HashMap<>();
 
     public FieldMappingConfig() {
     }
@@ -79,11 +79,11 @@ public class FieldMappingConfig {
         this.globalFieldMappings = globalFieldMappings;
     }
 
-    public Map<String, String> getTransactionFieldMappings() {
+    public Map<String, FieldMappingSelection> getTransactionFieldMappings() {
         return transactionFieldMappings;
     }
 
-    public void setTransactionFieldMappings(Map<String, String> transactionFieldMappings) {
+    public void setTransactionFieldMappings(Map<String, FieldMappingSelection> transactionFieldMappings) {
         this.transactionFieldMappings = transactionFieldMappings;
     }
 
@@ -95,11 +95,11 @@ public class FieldMappingConfig {
         this.globalFieldDefaultValues = globalFieldDefaultValues;
     }
 
-    public Map<String, String> getTransactionFieldDefaultValues() {
-        return transactionFieldDefaultValues;
+    public int getVersion() {
+        return version;
     }
 
-    public void setTransactionFieldDefaultValues(Map<String, String> transactionFieldDefaultValues) {
-        this.transactionFieldDefaultValues = transactionFieldDefaultValues;
+    public void setVersion(int version) {
+        this.version = version;
     }
 }
