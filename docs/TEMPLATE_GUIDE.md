@@ -8,7 +8,7 @@ Die wichtigsten Bausteine sind:
 
 - **`XmlTemplateEngine`** (`service/XmlTemplateEngine.java`): rendert Templates mit einer Mustache-ähnlichen Syntax (Variablen, Sektionen, invertierte Sektionen). Alle Platzhalter werden automatisch XML-konform escaped.
 - **`SepaFormat`** (`model/sepa/SepaFormat.java`): zentraler Enum, der alle unterstützten Formate samt Code, Anzeigename und Typ (`CREDIT_TRANSFER` oder `DIRECT_DEBIT`) auflistet.
-- **Felddefinitionen** (`model/sepa/definition`): `SepaFieldDefinitionFactory` liefert formatabhängige Pflicht- und optionalen Felder (`Pain001FieldDefinition` für Überweisungen, `Pain008FieldDefinition` für Lastschriften). Damit werden Eingabeformulare, CSV-Import und Validierungen gesteuert.
+- **Felddefinitionen** (`model/sepa/definition`): `SepaFieldDefinitionFactory` liefert formatabhängige Pflicht- und optionale Felder (`Pain001FieldDefinition` für Überweisungen, `Pain008FieldDefinition` für Lastschriften). Damit werden Eingabeformulare, CSV-Import und Validierungen gesteuert.
 - **`SepaXmlGenerator`** (`service/SepaXmlGenerator.java`): lädt das Template, bereitet die Daten (inkl. `transactions`-Liste) vor und rendert die finale XML-Datei. Anschließend prüft `XsdValidationService` die Datei gegen das passende XSD.
 
 ## Template-Speicherort & Namenskonvention
@@ -66,7 +66,7 @@ Beispiel für optionale Felder:
 4. **Felddefinition prüfen/anpassen**  
    Für neue pain.001- oder pain.008-Varianten reicht meist die bestehende `Pain001FieldDefinition` bzw. `Pain008FieldDefinition`. Abweichende Pflichtfelder können dort ergänzt oder über eine neue Implementierung von `ISepaFieldDefinition` bereitgestellt werden.
 
-5. **(Optional) Defaultwerte erweitern**
+5. **(Optional) Defaultwerte erweitern**  
    Falls zusätzliche globale Felder benötigt werden (z. B. `batchBooking` für `<BtchBookg>` oder `localInstrumentCode`), können diese in den Felddefinitionen ergänzt und anschließend im Template verwendet werden. Standardwerte lassen sich im `SepaXmlGenerator` hinterlegen.
 
 6. **Validieren**  
@@ -82,14 +82,6 @@ Die folgenden Werte stellt `SepaXmlGenerator` bereit (abhängig vom Format-Typ):
 - Transaktionsfelder innerhalb `{{#transactions}}`: `endToEndId`, `amount`, `remittanceInfo`, `debtor*`, `creditor*`, `mandateId`, `mandateSignatureDate`, usw.
 
 Alle Felder, die in `SepaTransaction` gesetzt werden, können im Template genutzt werden. Leere Werte werden ausgelassen bzw. über invertierte Sektionen abgefangen.
-
-## Best Practices
-
-1. **Namespace beachten** – muss exakt mit der XSD übereinstimmen.
-2. **Optionale Elemente kapseln** – mit invertierten Sektionen lassen sich Fallbacks (z. B. `NOTPROVIDED`) modellieren.
-3. **Beträge normalisieren** – der `SepaTransactionBuilder` wandelt Dezimaltrennzeichen, wenn das Feld als Betrag erkannt wird.
-4. **Konsistente Datenquellen** – globale Felder stammen typischerweise aus den Formulareingaben, Transaktionsfelder aus CSV-Spalten.
-5. **Validierung automatisieren** – nach Änderungen immer mindestens eine Testdatei erzeugen und validieren.
 
 ## Dynamische Platzhalter für feste Werte
 
@@ -108,6 +100,14 @@ Viele Pflichtfelder – etwa `EndToEndId`, `MsgId` oder der Verwendungszweck –
 | `{randomAlpha:6}` / `{randomAlnum:8}` | Zufällige Buchstaben bzw. Buchstaben/Ziffern | `Token-{randomAlnum:8}` |
 
 **Kombinationen sind möglich:** `Rechnung-{today}-{id}` erzeugt z. B. fortlaufende End-to-End-IDs mit Tagesdatum. Globale Felder (wie `msgId`) werden einmalig beim Start berechnet, transaktionsbezogene Felder bei jeder CSV-Zeile. Unbekannte Platzhalter bleiben unverändert erhalten.
+
+## Best Practices
+
+1. **Namespace beachten** – muss exakt mit der XSD übereinstimmen.
+2. **Optionale Elemente kapseln** – mit invertierten Sektionen lassen sich Fallbacks (z. B. `NOTPROVIDED`) modellieren.
+3. **Beträge normalisieren** – der `SepaTransactionBuilder` wandelt Dezimaltrennzeichen, wenn das Feld als Betrag erkannt wird.
+4. **Konsistente Datenquellen** – globale Felder stammen typischerweise aus den Formulareingaben, Transaktionsfelder aus CSV-Spalten.
+5. **Validierung automatisieren** – nach Änderungen immer mindestens eine Testdatei erzeugen und validieren.
 
 ## Beispiel: Neue Lastschrift-Version `pain.008.001.08`
 
