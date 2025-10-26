@@ -1,197 +1,101 @@
 # SEPA XML Template Guide
 
-## Übersicht
+## Überblick
 
-Das SEPA XML-Generierungssystem verwendet ein Template-basiertes Verfahren, das die einfache Erweiterung um neue SEPA-Formate ermöglicht.
+Das SEPA-XML-System von EasySepa erzeugt Zahlungsdateien über eine schlanke Template-Engine. Neue Formate können hinzugefügt werden, indem Template- und Schema-Dateien ergänzt und das Format im Code registriert wird.
 
-## Template-System
+Die wichtigsten Bausteine sind:
 
-### Template-Engine
+- **`XmlTemplateEngine`** (`service/XmlTemplateEngine.java`): rendert Templates mit einer Mustache-ähnlichen Syntax (Variablen, Sektionen, invertierte Sektionen). Alle Platzhalter werden automatisch XML-konform escaped.
+- **`SepaFormat`** (`model/sepa/SepaFormat.java`): zentraler Enum, der alle unterstützten Formate samt Code, Anzeigename und Typ (`CREDIT_TRANSFER` oder `DIRECT_DEBIT`) auflistet.
+- **Felddefinitionen** (`model/sepa/definition`): `SepaFieldDefinitionFactory` liefert formatabhängige Pflicht- und optionalen Felder (`Pain001FieldDefinition` für Überweisungen, `Pain008FieldDefinition` für Lastschriften). Damit werden Eingabeformulare, CSV-Import und Validierungen gesteuert.
+- **`SepaXmlGenerator`** (`service/SepaXmlGenerator.java`): lädt das Template, bereitet die Daten (inkl. `transactions`-Liste) vor und rendert die finale XML-Datei. Anschließend prüft `XsdValidationService` die Datei gegen das passende XSD.
 
-Die `XmlTemplateEngine`-Klasse implementiert eine einfache Mustache-ähnliche Template-Syntax:
+## Template-Speicherort & Namenskonvention
 
-- `{{variableName}}` - Einfache Variable einsetzen
-- `{{#section}}...{{/section}}` - Bedingte Sektion oder Schleife
-- `{{^section}}...{{/section}}` - Invertierte Sektion (nur wenn Wert leer/false)
+- Templates: `src/main/resources/de/agwu/apps/easysepa/templates/{FORMAT_CODE}.xml`
+- XSD-Schemata: `src/main/resources/de/agwu/apps/easysepa/xsd/{FORMAT_CODE}.xsd`
 
-### Template-Speicherort
+Der `{FORMAT_CODE}` entspricht exakt dem ISO 20022 Code (z. B. `pain.008.001.11`). Die Template-Engine erwartet diese Benennung, damit Template und XSD automatisch zum ausgewählten Format gefunden werden können.
 
-Alle Templates befinden sich in:
-```
-src/main/resources/de/agwu/apps/easysepa/templates/
-```
+Aktuell enthalten:
 
-Dateiname-Format: `{SEPA_FORMAT_CODE}.xml`
+- `pain.001.001.03` – SEPA Credit Transfer Version 03
+- `pain.001.001.09` – SEPA Credit Transfer Version 09
+- `pain.008.001.08` – SEPA Direct Debit Version 08
+- `pain.008.001.11` – SEPA Direct Debit Version 11
 
-Beispiele:
-- `pain.001.001.03.xml` - Credit Transfer ISO 20022 Version 03
-- `pain.001.001.09.xml` - Credit Transfer ISO 20022 Version 09
-- `pain.008.001.11.xml` - Direct Debit ISO 20022 Version 11
+## Template-Syntax im Überblick
 
-## Neues Format hinzufügen
+- `{{variableName}}` – ersetzt eine Variable.
+- `{{#section}} … {{/section}}` – rendert den Block, wenn der Wert vorhanden ist; bei Listen wird für jedes Listenelement gerendert.
+- `{{^section}} … {{/section}}` – rendert den Block, wenn der Wert fehlt, leer oder `false` ist.
 
-### Schritt 1: XSD-Schema hinzufügen
+Innerhalb von `{{#transactions}}` stehen alle Felder einer Transaktion zur Verfügung. Globale Felder (z. B. `msgId`, `controlSum`) liegen ebenfalls im Datenmodell und können überall im Template genutzt werden.
 
-Legen Sie die XSD-Datei ab in:
-```
-src/main/resources/de/agwu/apps/easysepa/xsd/{FORMAT_CODE}.xsd
-```
-
-### Schritt 2: Format-Definition erstellen
-
-Erstellen Sie eine neue Klasse in `de.agwu.apps.easysepa.model.sepa.definition`:
-
-```java
-public class Pain001001XX implements SepaFormatDefinition {
-    @Override
-    public String getCode() {
-        return "pain.001.001.XX";
-    }
-
-    @Override
-    public String getDisplayName() {
-        return "SEPA Credit Transfer v.XX";
-    }
-
-    @Override
-    public SepaFormatType getType() {
-        return SepaFormatType.CREDIT_TRANSFER;
-    }
-
-    @Override
-    public List<SepaField> getGlobalFields() {
-        // Definieren Sie globale Felder
-    }
-
-    @Override
-    public List<SepaField> getTransactionFields() {
-        // Definieren Sie Transaktionsfelder
-    }
-}
-```
-
-Registrieren Sie das Format in `SepaFormatRegistry`:
-```java
-public class SepaFormatRegistry {
-    private static final List<SepaFormatDefinition> FORMATS = List.of(
-        new Pain001001_03(),
-        new Pain001001_09(),
-        new Pain008001_11(),
-        new Pain001001XX()  // Neues Format hinzufügen
-    );
-}
-```
-
-### Schritt 3: XML-Template erstellen
-
-Erstellen Sie eine Template-Datei:
-```
-src/main/resources/de/agwu/apps/easysepa/templates/pain.001.001.XX.xml
-```
-
-Template-Struktur:
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.XX">
-  <CstmrCdtTrfInitn>
-    <GrpHdr>
-      <MsgId>{{msgId}}</MsgId>
-      <CreDtTm>{{creationDateTime}}</CreDtTm>
-      <NbOfTxs>{{numberOfTransactions}}</NbOfTxs>
-      <CtrlSum>{{controlSum}}</CtrlSum>
-      <InitgPty>
-        <Nm>{{initiatorName}}</Nm>
-      </InitgPty>
-    </GrpHdr>
-    <PmtInf>
-      <!-- Globale Payment Information Felder -->
-      <PmtInfId>{{pmtInfId}}</PmtInfId>
-      <!-- ... -->
-      
-      <!-- Transaktionsschleife -->
-      {{#transactions}}
-      <CdtTrfTxInf>
-        <PmtId>
-          <EndToEndId>{{endToEndId}}</EndToEndId>
-        </PmtId>
-        <Amt>
-          <InstdAmt Ccy="EUR">{{amount}}</InstdAmt>
-        </Amt>
-        <!-- Weitere Transaktionsfelder -->
-      </CdtTrfTxInf>
-      {{/transactions}}
-    </PmtInf>
-  </CstmrCdtTrfInitn>
-</Document>
-```
-
-### Schritt 4: Optionale BIC-Felder
-
-Für optionale Felder wie BIC verwenden Sie bedingte Sektionen:
+Beispiel für optionale Felder:
 
 ```xml
-{{#debtorBIC}}
-<BICFI>{{debtorBIC}}</BICFI>
-{{/debtorBIC}}
-{{^debtorBIC}}
+{{#creditorBIC}}
+<BICFI>{{creditorBIC}}</BICFI>
+{{/creditorBIC}}
+{{^creditorBIC}}
 <Othr>
   <Id>NOTPROVIDED</Id>
 </Othr>
-{{/debtorBIC}}
+{{/creditorBIC}}
 ```
+
+## Schritte zum Hinzufügen eines neuen Formats
+
+1. **XSD bereitstellen**  
+   Speichern Sie die offizielle XSD-Datei unter `src/main/resources/de/agwu/apps/easysepa/xsd/{FORMAT_CODE}.xsd`. Die `XsdValidationService`-Klasse verwendet diesen Pfad automatisch.
+
+2. **Template erstellen**  
+   Legen Sie die passende XML-Template-Datei unter `src/main/resources/de/agwu/apps/easysepa/templates/{FORMAT_CODE}.xml` an. Stellen Sie sicher, dass der Namespace (`xmlns`) mit der XSD übereinstimmt.
+
+3. **Format registrieren**  
+   Fügen Sie dem `SepaFormat`-Enum einen neuen Eintrag hinzu:
+
+   ```java
+   PAIN_008_001_08("pain.008.001.08", "Lastschrift (Direct Debit)", SepaFormatType.DIRECT_DEBIT)
+   ```
+
+   Die Auswahl im UI, das Mapping der Felddefinitionen und die Template-Ladung basieren auf diesem Enum.
+
+4. **Felddefinition prüfen/anpassen**  
+   Für neue pain.001- oder pain.008-Varianten reicht meist die bestehende `Pain001FieldDefinition` bzw. `Pain008FieldDefinition`. Abweichende Pflichtfelder können dort ergänzt oder über eine neue Implementierung von `ISepaFieldDefinition` bereitgestellt werden.
+
+5. **(Optional) Defaultwerte erweitern**  
+   Falls zusätzliche globale Felder benötigt werden (z. B. `localInstrumentCode`), können diese in den Felddefinitionen ergänzt und anschließend im Template verwendet werden.
+
+6. **Validieren**  
+   Erzeugen Sie eine Beispieldatei über die Anwendung und prüfen Sie, ob `XsdValidationService` keine Fehler meldet. Die generierte XML-Datei lässt sich zusätzlich gegen das XSD mit einem externen Validator testen.
 
 ## Verfügbare Template-Variablen
 
-### Globale Variablen (automatisch gefüllt):
-- `msgId` - Message ID
-- `creationDateTime` - Zeitstempel (ISO 8601)
-- `numberOfTransactions` - Anzahl der Transaktionen
-- `controlSum` - Summe aller Beträge
-- `initiatorName` - Name des Initiators
-- `pmtInfId` - Payment Information ID
+Die folgenden Werte stellt `SepaXmlGenerator` bereit (abhängig vom Format-Typ):
 
-### Credit Transfer spezifisch:
-- `reqdExctnDt` - Ausführungsdatum
-- `debtorName` - Schuldnername
-- `debtorIBAN` - Schuldner-IBAN
-- `debtorBIC` - Schuldner-BIC (optional)
+- `msgId`, `creationDateTime`, `numberOfTransactions`, `controlSum`, `initiatorName`, `pmtInfId`
+- `reqdExctnDt`, `debtorName`, `debtorIBAN`, `debtorBIC` (nur Überweisung)
+- `seqTp`, `reqdColltnDt`, `creditorName`, `creditorIBAN`, `creditorBIC`, `creditorId`, `localInstrumentCode` (nur Lastschrift)
+- Transaktionsfelder innerhalb `{{#transactions}}`: `endToEndId`, `amount`, `remittanceInfo`, `debtor*`, `creditor*`, `mandateId`, `mandateSignatureDate`, usw.
 
-### Direct Debit spezifisch:
-- `seqTp` - Sequenztyp (FRST, RCUR, OOFF, FNAL)
-- `reqdColltnDt` - Einzugsdatum
-- `creditorName` - Gläubigername
-- `creditorIBAN` - Gläubiger-IBAN
-- `creditorBIC` - Gläubiger-BIC (optional)
-- `creditorId` - Gläubiger-ID
-
-### Transaktionsfelder (innerhalb {{#transactions}}):
-- `endToEndId` - End-to-End Referenz
-- `amount` - Betrag
-- `creditorName` / `debtorName` - Name
-- `creditorIBAN` / `debtorIBAN` - IBAN
-- `creditorBIC` / `debtorBIC` - BIC (optional)
-- `remittanceInfo` - Verwendungszweck (optional)
-- `mandateId` - Mandatsreferenz (nur Direct Debit)
-- `mandateSignatureDate` - Mandatsunterschriftsdatum (nur Direct Debit)
-
-## XSD-Validierung
-
-Alle generierten XML-Dateien werden automatisch gegen ihre entsprechende XSD-Schema-Datei validiert. Bei Validierungsfehlern wird eine detaillierte Fehlermeldung angezeigt.
+Alle Felder, die in `SepaTransaction` gesetzt werden, können im Template genutzt werden. Leere Werte werden ausgelassen bzw. über invertierte Sektionen abgefangen.
 
 ## Best Practices
 
-1. **XSD zuerst**: Beginnen Sie immer mit der XSD-Schema-Datei als Referenz
-2. **Template-Validierung**: Testen Sie das Template mit Beispieldaten
-3. **Namespace korrekt**: Achten Sie auf den korrekten XML-Namespace in der Document-Element
-4. **Pflichtfelder**: Markieren Sie Pflichtfelder in der Format-Definition als `required(true)`
-5. **Optionale Felder**: Verwenden Sie bedingte Sektionen für optionale Elemente
-6. **XML-Escaping**: Die Template-Engine escaped automatisch alle Variablen
+1. **Namespace beachten** – muss exakt mit der XSD übereinstimmen.
+2. **Optionale Elemente kapseln** – mit invertierten Sektionen lassen sich Fallbacks (z. B. `NOTPROVIDED`) modellieren.
+3. **Beträge normalisieren** – der `SepaTransactionBuilder` wandelt Dezimaltrennzeichen, wenn das Feld als Betrag erkannt wird.
+4. **Konsistente Datenquellen** – globale Felder stammen typischerweise aus den Formulareingaben, Transaktionsfelder aus CSV-Spalten.
+5. **Validierung automatisieren** – nach Änderungen immer mindestens eine Testdatei erzeugen und validieren.
 
-## Beispiel: Neues Format pain.001.001.12
+## Beispiel: Neue Lastschrift-Version `pain.008.001.08`
 
-1. XSD hinzufügen: `xsd/pain.001.001.12.xsd`
-2. Format-Definition: `Pain001001_12.java`
-3. Template: `templates/pain.001.001.12.xml`
-4. Registrierung in `SepaFormatRegistry`
+1. XSD hinzufügen: `src/main/resources/de/agwu/apps/easysepa/xsd/pain.008.001.08.xsd`
+2. Template erstellen: `src/main/resources/de/agwu/apps/easysepa/templates/pain.008.001.08.xml`
+3. `SepaFormat` um `PAIN_008_001_08` erweitern (Typ `DIRECT_DEBIT`)
+4. Template testen – Erstellung einer XML-Datei und Validierung gegen das neue XSD
 
-**Fertig!** Das neue Format ist sofort in der Anwendung verfügbar.
+Damit steht das neue Format unmittelbar in der Anwendung zur Verfügung.

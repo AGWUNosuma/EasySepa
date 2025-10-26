@@ -106,6 +106,13 @@ public class Pain008FieldDefinition implements ISepaFieldDefinition {
             "    → Verwenden für die allerletzte Abbuchung (danach Mandat ungültig)\n\n" +
             "Wichtig: Die Vorlauffristen unterscheiden sich je nach Typ!"));
 
+        fields.add(new SepaField("localInstrumentCode", "Local Instrument Code", false,
+            "Local Instrument Code:\n" +
+            "Kennzeichnet das Lastschriftverfahren (z. B. CORE oder B2B).\n\n" +
+            "Standard: CORE – klassische SEPA-Basislastschrift.\n" +
+            "Weitere Optionen: B2B (Business-to-Business), COR1 (verkürzte Vorlauffrist, sofern unterstützt).\n\n" +
+            "Wenn nichts angegeben wird, nutzt EasySepa automatisch CORE."));
+
         return fields;
     }
 

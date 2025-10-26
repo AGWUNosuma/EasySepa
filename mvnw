@@ -286,6 +286,51 @@ export MAVEN_PROJECTBASEDIR=${MAVEN_BASEDIR:-"$BASE_DIR"}
 if [ "$MVNW_VERBOSE" = true ]; then
   echo $MAVEN_PROJECTBASEDIR
 fi
+http_proxy_to_opts() {
+  proxy_url="$1"
+  protocol="$2"
+
+  if [ -z "$proxy_url" ]; then
+    return
+  fi
+
+  # Remove scheme if present
+  proxy_url=${proxy_url#*://}
+  proxy_url=${proxy_url#*//}
+
+  # Strip credentials portion if supplied (user:password@)
+  proxy_host_port=${proxy_url##*@}
+
+  proxy_host=${proxy_host_port%%:*}
+  proxy_port=${proxy_host_port##*:}
+
+  if [ -z "$proxy_host" ] || [ "$proxy_host" = "$proxy_port" ]; then
+    proxy_port=""
+  fi
+
+  if [ -z "$proxy_host" ]; then
+    return
+  fi
+
+  if [ -z "$proxy_port" ] || [ "$proxy_port" = "$proxy_host" ]; then
+    case "$protocol" in
+      https) proxy_port=443 ;;
+      http) proxy_port=80 ;;
+      *) proxy_port=80 ;;
+    esac
+  fi
+
+  case " $MAVEN_OPTS " in
+    *"-D${protocol}.proxyHost="*) ;;
+    *) MAVEN_OPTS="-D${protocol}.proxyHost=${proxy_host} -D${protocol}.proxyPort=${proxy_port} $MAVEN_OPTS" ;;
+  esac
+}
+
+if [ -z "$MVNW_SKIP_PROXY" ]; then
+  http_proxy_to_opts "${http_proxy:-${HTTP_PROXY}}" http
+  http_proxy_to_opts "${https_proxy:-${HTTPS_PROXY}}" https
+fi
+
 MAVEN_OPTS="$(concat_lines "$MAVEN_PROJECTBASEDIR/.mvn/jvm.config") $MAVEN_OPTS"
 
 # For Cygwin, switch paths to Windows format before running java

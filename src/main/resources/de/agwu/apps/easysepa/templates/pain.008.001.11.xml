@@ -20,7 +20,7 @@
           <Cd>SEPA</Cd>
         </SvcLvl>
         <LclInstrm>
-          <Cd>CORE</Cd>
+          <Cd>{{localInstrumentCode}}</Cd>
         </LclInstrm>
         <SeqTp>{{seqTp}}</SeqTp>
       </PmtTpInf>
