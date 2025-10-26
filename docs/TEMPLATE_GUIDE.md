@@ -25,7 +25,11 @@ Aktuell enthalten:
 - `pain.008.001.08` – SEPA Direct Debit Version 08
 - `pain.008.001.11` – SEPA Direct Debit Version 11
 
-## Template-Syntax im Überblick
+Beispiele:
+- `pain.001.001.03.xml` - Credit Transfer ISO 20022 Version 03
+- `pain.001.001.09.xml` - Credit Transfer ISO 20022 Version 09
+- `pain.008.001.08.xml` - Direct Debit ISO 20022 Version 08
+- `pain.008.001.11.xml` - Direct Debit ISO 20022 Version 11
 
 - `{{variableName}}` – ersetzt eine Variable.
 - `{{#section}} … {{/section}}` – rendert den Block, wenn der Wert vorhanden ist; bei Listen wird für jedes Listenelement gerendert.
@@ -46,7 +50,31 @@ Beispiel für optionale Felder:
 {{/creditorBIC}}
 ```
 
-## Schritte zum Hinzufügen eines neuen Formats
+Registrieren Sie das Format in der `SepaFormat`-Enum und hinterlegen Sie die Felddefinition in der `SepaFieldDefinitionFactory`:
+
+```java
+public enum SepaFormat {
+    PAIN_001_001_03("pain.001.001.03", "Überweisung (Credit Transfer)", SepaFormatType.CREDIT_TRANSFER),
+    PAIN_001_001_09("pain.001.001.09", "Überweisung (Credit Transfer)", SepaFormatType.CREDIT_TRANSFER),
+    PAIN_008_001_08("pain.008.001.08", "Lastschrift (Direct Debit)", SepaFormatType.DIRECT_DEBIT),
+    PAIN_008_001_11("pain.008.001.11", "Lastschrift (Direct Debit)", SepaFormatType.DIRECT_DEBIT),
+    PAIN_001_001_XX("pain.001.001.XX", "Überweisung (Credit Transfer)", SepaFormatType.CREDIT_TRANSFER); // Neues Format
+}
+```
+
+```java
+public final class SepaFieldDefinitionFactory {
+    public static ISepaFieldDefinition create(SepaFormat format) {
+        return switch (format) {
+            case PAIN_001_001_03 -> new Pain001FieldDefinition(format);
+            case PAIN_001_001_09 -> new Pain001FieldDefinition(format);
+            case PAIN_008_001_08 -> new Pain008FieldDefinition(format);
+            case PAIN_008_001_11 -> new Pain008FieldDefinition(format);
+            case PAIN_001_001_XX -> new Pain001FieldDefinition(format); // Neues Format hinterlegen
+        };
+    }
+}
+```
 
 1. **XSD bereitstellen**  
    Speichern Sie die offizielle XSD-Datei unter `src/main/resources/de/agwu/apps/easysepa/xsd/{FORMAT_CODE}.xsd`. Die `XsdValidationService`-Klasse verwendet diesen Pfad automatisch.
@@ -74,14 +102,58 @@ Beispiel für optionale Felder:
 
 ## Verfügbare Template-Variablen
 
-Die folgenden Werte stellt `SepaXmlGenerator` bereit (abhängig vom Format-Typ):
+### Globale Variablen (automatisch gefüllt):
+- `msgId` - Message ID
+- `creationDateTime` - Zeitstempel (ISO 8601)
+- `numberOfTransactions` - Anzahl der Transaktionen
+- `controlSum` - Summe aller Beträge
+- `initiatorName` - Name des Initiators
+- `pmtInfId` - Payment Information ID
 
-- `msgId`, `creationDateTime`, `numberOfTransactions`, `controlSum`, `initiatorName`, `pmtInfId`
-- `reqdExctnDt`, `debtorName`, `debtorIBAN`, `debtorBIC` (nur Überweisung)
-- `seqTp`, `reqdColltnDt`, `creditorName`, `creditorIBAN`, `creditorBIC`, `creditorId`, `localInstrumentCode` (nur Lastschrift)
-- Transaktionsfelder innerhalb `{{#transactions}}`: `endToEndId`, `amount`, `remittanceInfo`, `debtor*`, `creditor*`, `mandateId`, `mandateSignatureDate`, usw.
+### Credit Transfer spezifisch:
+- `reqdExctnDt` - Ausführungsdatum
+- `debtorName` - Schuldnername
+- `debtorIBAN` - Schuldner-IBAN
+- `debtorBIC` - Schuldner-BIC (optional)
 
-Alle Felder, die in `SepaTransaction` gesetzt werden, können im Template genutzt werden. Leere Werte werden ausgelassen bzw. über invertierte Sektionen abgefangen.
+### Direct Debit spezifisch:
+- `seqTp` - Sequenztyp (FRST, RCUR, OOFF, FNAL)
+- `reqdColltnDt` - Einzugsdatum
+- `creditorName` - Gläubigername
+- `creditorIBAN` - Gläubiger-IBAN
+- `creditorBIC` - Gläubiger-BIC (optional)
+- `creditorId` - Gläubiger-ID
+- `batchBooking` - Gibt an, ob Buchungen gebündelt verarbeitet werden (true/false)
+- `localInstrument` - Lokaler Instrumenten-Code (z. B. `B2B` oder `CORE`)
+
+### Transaktionsfelder (innerhalb {{#transactions}}):
+- `endToEndId` - End-to-End Referenz
+- `amount` - Betrag
+- `creditorName` / `debtorName` - Name
+- `creditorIBAN` / `debtorIBAN` - IBAN
+- `creditorBIC` / `debtorBIC` - BIC (optional)
+- `remittanceInfo` - Verwendungszweck (optional)
+- `mandateId` - Mandatsreferenz (nur Direct Debit)
+- `mandateSignatureDate` - Mandatsunterschriftsdatum (nur Direct Debit)
+- `endToEndId` kann mithilfe von Platzhaltern dynamisch erzeugt werden (siehe Abschnitt "Dynamische Standardwerte")
+
+## Dynamische Standardwerte
+
+Feste Werte, die in der UI über "Fester Wert" hinterlegt werden, können Platzhalter enthalten, um pro Transaktion eindeutige Werte zu erzeugen. Das ist besonders hilfreich für Felder wie `EndToEndId`.
+
+Verfügbare Platzhalter:
+
+- `{id}` – Sequenzieller Zähler, beginnend bei 1
+- `{today}` – Heutiges Datum im Format `yyyy-MM-dd`
+- `{timestamp}` – Aktuelle Uhrzeit im Format `yyyyMMddHHmmss`
+- `{uuid}` – Zufälliger UUID-String ohne Bindestriche
+- `{rand:N}` – Zufällige alphanumerische Zeichenkette mit Länge `N`
+
+Platzhalter können kombiniert werden, z. B. `Rechnung-{today}-{id}`. Alles außerhalb der geschweiften Klammern wird unverändert übernommen. Die Auflösung erfolgt beim Einlesen jeder Transaktion, sodass jede Zeile einen eindeutigen Wert erhält.
+
+## XSD-Validierung
+
+Alle generierten XML-Dateien werden automatisch gegen ihre entsprechende XSD-Schema-Datei validiert. Bei Validierungsfehlern wird eine detaillierte Fehlermeldung angezeigt.
 
 ## Best Practices
 
@@ -93,9 +165,9 @@ Alle Felder, die in `SepaTransaction` gesetzt werden, können im Template genutz
 
 ## Beispiel: Neue Lastschrift-Version `pain.008.001.08`
 
-1. XSD hinzufügen: `src/main/resources/de/agwu/apps/easysepa/xsd/pain.008.001.08.xsd`
-2. Template erstellen: `src/main/resources/de/agwu/apps/easysepa/templates/pain.008.001.08.xml`
-3. `SepaFormat` um `PAIN_008_001_08` erweitern (Typ `DIRECT_DEBIT`)
-4. Template testen – Erstellung einer XML-Datei und Validierung gegen das neue XSD
+1. XSD hinzufügen: `xsd/pain.001.001.12.xsd`
+2. Format-Definition: `Pain001001_12.java`
+3. Template: `templates/pain.001.001.12.xml`
+4. `SepaFormat`-Enum und `SepaFieldDefinitionFactory` erweitern
 
 Damit steht das neue Format unmittelbar in der Anwendung zur Verfügung.

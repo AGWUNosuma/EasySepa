@@ -13,6 +13,7 @@
     <PmtInf>
       <PmtInfId>{{pmtInfId}}</PmtInfId>
       <PmtMtd>DD</PmtMtd>
+      <BtchBookg>{{batchBooking}}</BtchBookg>
       <NbOfTxs>{{numberOfTransactions}}</NbOfTxs>
       <CtrlSum>{{controlSum}}</CtrlSum>
       <PmtTpInf>

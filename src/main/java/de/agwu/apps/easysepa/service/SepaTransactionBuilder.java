@@ -9,6 +9,7 @@ import de.agwu.apps.easysepa.model.sepa.TransactionValidationResult;
 import de.agwu.apps.easysepa.model.sepa.definition.ISepaFieldDefinition;
 import de.agwu.apps.easysepa.util.CsvUtil;
 import de.agwu.apps.easysepa.util.FieldMappingConstants;
+import de.agwu.apps.easysepa.util.TemplateValueResolver;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -75,16 +76,22 @@ public class SepaTransactionBuilder {
 
             Map<String, Integer> headerIndex = buildHeaderIndex(headers);
             Map<String, Boolean> amountFields = precomputeAmountFields(fieldDefinition);
+            TemplateValueResolver.TemplateBindings defaultBindings = TemplateValueResolver.prepare(defaultValues);
+            Map<String, String> resolvedGlobalValues = TemplateValueResolver
+                    .prepare(globalFieldValues)
+                    .resolveAll(1, 1);
 
             String[] row;
             int dataRowNumber = 1;
+            int transactionIndex = 1;
             while ((row = reader.readNext()) != null) {
                 SepaTransaction transaction = new SepaTransaction(dataRowNumber);
                 List<String> errors = new ArrayList<>();
 
-                addGlobalFields(fieldDefinition, globalFieldValues, transaction);
-                populateTransactionFields(fieldDefinition, columnMappings, defaultValues, decimalSeparator,
-                        headerIndex, row, transaction, errors, amountFields);
+                addGlobalFields(fieldDefinition, resolvedGlobalValues, transaction);
+                populateTransactionFields(fieldDefinition, columnMappings, decimalSeparator,
+                        headerIndex, row, transaction, errors, amountFields,
+                        defaultBindings, transactionIndex);
 
                 if (errors.isEmpty()) {
                     result.addValidTransaction(transaction);
@@ -92,6 +99,7 @@ public class SepaTransactionBuilder {
                     result.addInvalidTransaction(transaction, errors);
                 }
                 dataRowNumber++;
+                transactionIndex++;
             }
         }
 
@@ -127,13 +135,14 @@ public class SepaTransactionBuilder {
 
     private void populateTransactionFields(ISepaFieldDefinition fieldDefinition,
                                            Map<String, String> columnMappings,
-                                           Map<String, String> defaultValues,
                                            char decimalSeparator,
                                            Map<String, Integer> headerIndex,
                                            String[] row,
                                            SepaTransaction transaction,
                                            List<String> errors,
-                                           Map<String, Boolean> amountFields) {
+                                           Map<String, Boolean> amountFields,
+                                           TemplateValueResolver.TemplateBindings defaultBindings,
+                                           int transactionIndex) {
 
         for (SepaField field : fieldDefinition.getTransactionFields()) {
             String fieldName = field.getFieldName();
@@ -149,7 +158,7 @@ public class SepaTransactionBuilder {
                     }
                 }
             } else {
-                value = defaultValues.get(fieldName);
+                value = defaultBindings.resolveValue(fieldName, transactionIndex, transaction.getRowNumber());
             }
 
             if (value != null && !value.trim().isEmpty()) {
@@ -159,4 +168,5 @@ public class SepaTransactionBuilder {
             }
         }
     }
+
 }

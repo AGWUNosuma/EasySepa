@@ -104,6 +104,18 @@ public class SepaXmlGenerator {
         data.put("creditorIBAN", firstTx.getField("creditorIBAN"));
         data.put("creditorId", firstTx.getField("creditorId"));
 
+        String batchBooking = firstTx.getField("batchBooking");
+        if (batchBooking != null) {
+            batchBooking = batchBooking.trim();
+        }
+        if (batchBooking == null || batchBooking.isEmpty()) {
+            batchBooking = "true";
+        }
+        if (!"true".equalsIgnoreCase(batchBooking) && !"false".equalsIgnoreCase(batchBooking)) {
+            batchBooking = "true";
+        }
+        data.put("batchBooking", batchBooking.toLowerCase(Locale.ROOT));
+
         String localInstrument = firstTx.getField("localInstrumentCode");
         if (localInstrument != null) {
             localInstrument = localInstrument.trim();
