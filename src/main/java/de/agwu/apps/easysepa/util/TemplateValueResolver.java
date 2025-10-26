@@ -71,6 +71,31 @@ public final class TemplateValueResolver {
                 : Optional.empty();
     }
 
+    /**
+     * Prepare a reusable binding helper for a set of key/value mappings that may contain placeholders.
+     */
+    public static TemplateBindings prepare(Map<String, String> values) {
+        if (values == null || values.isEmpty()) {
+            return TemplateBindings.EMPTY;
+        }
+
+        Map<String, TemplateExpression> expressions = new ConcurrentHashMap<>();
+        Map<String, String> staticValues = new ConcurrentHashMap<>();
+
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key == null) {
+                continue;
+            }
+            compile(value).ifPresentOrElse(
+                    expression -> expressions.put(key, expression),
+                    () -> staticValues.put(key, value));
+        }
+
+        return new TemplateBindings(expressions, staticValues);
+    }
+
     public static final class TemplateExpression {
         private final List<Segment> segments;
 
@@ -85,6 +110,37 @@ public final class TemplateValueResolver {
                 segment.append(builder, context);
             }
             return builder.toString();
+        }
+    }
+
+    public static final class TemplateBindings {
+        private static final TemplateBindings EMPTY = new TemplateBindings(new ConcurrentHashMap<>(), new ConcurrentHashMap<>());
+
+        private final Map<String, TemplateExpression> expressions;
+        private final Map<String, String> staticValues;
+
+        private TemplateBindings(Map<String, TemplateExpression> expressions, Map<String, String> staticValues) {
+            this.expressions = expressions;
+            this.staticValues = staticValues;
+        }
+
+        public Map<String, String> resolveAll(int transactionIndex, int rowNumber) {
+            if (expressions.isEmpty()) {
+                return new ConcurrentHashMap<>(staticValues);
+            }
+            Map<String, String> resolved = new ConcurrentHashMap<>(staticValues);
+            for (Map.Entry<String, TemplateExpression> entry : expressions.entrySet()) {
+                resolved.put(entry.getKey(), entry.getValue().render(transactionIndex, rowNumber));
+            }
+            return resolved;
+        }
+
+        public String resolveValue(String key, int transactionIndex, int rowNumber) {
+            TemplateExpression expression = expressions.get(key);
+            if (expression != null) {
+                return expression.render(transactionIndex, rowNumber);
+            }
+            return staticValues.get(key);
         }
     }
 

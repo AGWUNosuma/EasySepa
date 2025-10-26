@@ -76,9 +76,10 @@ public class SepaTransactionBuilder {
 
             Map<String, Integer> headerIndex = buildHeaderIndex(headers);
             Map<String, Boolean> amountFields = precomputeAmountFields(fieldDefinition);
-            Map<String, TemplateValueResolver.TemplateExpression> templatedDefaults = compileDefaultTemplates(defaultValues);
-            Map<String, String> staticDefaults = extractStaticDefaults(defaultValues, templatedDefaults.keySet());
-            Map<String, String> resolvedGlobalValues = resolveGlobalFieldValues(globalFieldValues);
+            TemplateValueResolver.TemplateBindings defaultBindings = TemplateValueResolver.prepare(defaultValues);
+            Map<String, String> resolvedGlobalValues = TemplateValueResolver
+                    .prepare(globalFieldValues)
+                    .resolveAll(1, 1);
 
             String[] row;
             int dataRowNumber = 1;
@@ -90,7 +91,7 @@ public class SepaTransactionBuilder {
                 addGlobalFields(fieldDefinition, resolvedGlobalValues, transaction);
                 populateTransactionFields(fieldDefinition, columnMappings, decimalSeparator,
                         headerIndex, row, transaction, errors, amountFields,
-                        templatedDefaults, staticDefaults, transactionIndex);
+                        defaultBindings, transactionIndex);
 
                 if (errors.isEmpty()) {
                     result.addValidTransaction(transaction);
@@ -140,8 +141,7 @@ public class SepaTransactionBuilder {
                                            SepaTransaction transaction,
                                            List<String> errors,
                                            Map<String, Boolean> amountFields,
-                                           Map<String, TemplateValueResolver.TemplateExpression> templatedDefaults,
-                                           Map<String, String> staticDefaults,
+                                           TemplateValueResolver.TemplateBindings defaultBindings,
                                            int transactionIndex) {
 
         for (SepaField field : fieldDefinition.getTransactionFields()) {
@@ -158,12 +158,7 @@ public class SepaTransactionBuilder {
                     }
                 }
             } else {
-                TemplateValueResolver.TemplateExpression expression = templatedDefaults.get(fieldName);
-                if (expression != null) {
-                    value = expression.render(transactionIndex, transaction.getRowNumber());
-                } else {
-                    value = staticDefaults.get(fieldName);
-                }
+                value = defaultBindings.resolveValue(fieldName, transactionIndex, transaction.getRowNumber());
             }
 
             if (value != null && !value.trim().isEmpty()) {
@@ -174,32 +169,4 @@ public class SepaTransactionBuilder {
         }
     }
 
-    private Map<String, TemplateValueResolver.TemplateExpression> compileDefaultTemplates(Map<String, String> defaultValues) {
-        Map<String, TemplateValueResolver.TemplateExpression> compiled = new HashMap<>();
-        for (Map.Entry<String, String> entry : defaultValues.entrySet()) {
-            TemplateValueResolver.compile(entry.getValue()).ifPresent(expression -> compiled.put(entry.getKey(), expression));
-        }
-        return compiled;
-    }
-
-    private Map<String, String> extractStaticDefaults(Map<String, String> defaultValues, java.util.Set<String> templatedKeys) {
-        Map<String, String> staticDefaults = new HashMap<>();
-        for (Map.Entry<String, String> entry : defaultValues.entrySet()) {
-            if (!templatedKeys.contains(entry.getKey())) {
-                staticDefaults.put(entry.getKey(), entry.getValue());
-            }
-        }
-        return staticDefaults;
-    }
-
-    private Map<String, String> resolveGlobalFieldValues(Map<String, String> globalFieldValues) {
-        Map<String, String> resolved = new HashMap<>();
-        for (Map.Entry<String, String> entry : globalFieldValues.entrySet()) {
-            TemplateValueResolver.compile(entry.getValue())
-                    .ifPresentOrElse(
-                            expression -> resolved.put(entry.getKey(), expression.render(1, 1)),
-                            () -> resolved.put(entry.getKey(), entry.getValue()));
-        }
-        return resolved;
-    }
 }
