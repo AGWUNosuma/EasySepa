@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -88,8 +89,11 @@ public class SepaXmlGenerator {
         data.put("debtorIBAN", firstTx.getField("debtorIBAN"));
         
         String debtorBIC = firstTx.getField("debtorBIC");
-        if (debtorBIC != null && !debtorBIC.trim().isEmpty()) {
-            data.put("debtorBIC", debtorBIC);
+        if (debtorBIC != null) {
+            debtorBIC = debtorBIC.trim();
+        }
+        if (debtorBIC != null && !debtorBIC.isEmpty()) {
+            data.put("debtorBIC", debtorBIC.toUpperCase(Locale.ROOT));
         }
     }
 
@@ -99,10 +103,36 @@ public class SepaXmlGenerator {
         data.put("creditorName", firstTx.getField("creditorName"));
         data.put("creditorIBAN", firstTx.getField("creditorIBAN"));
         data.put("creditorId", firstTx.getField("creditorId"));
-        
+
+        String batchBooking = firstTx.getField("batchBooking");
+        if (batchBooking != null) {
+            batchBooking = batchBooking.trim();
+        }
+        if (batchBooking == null || batchBooking.isEmpty()) {
+            batchBooking = "true";
+        }
+        if (!"true".equalsIgnoreCase(batchBooking) && !"false".equalsIgnoreCase(batchBooking)) {
+            batchBooking = "true";
+        }
+        data.put("batchBooking", batchBooking.toLowerCase(Locale.ROOT));
+
+        String localInstrument = firstTx.getField("localInstrumentCode");
+        if (localInstrument != null) {
+            localInstrument = localInstrument.trim();
+        }
+        if (localInstrument == null || localInstrument.isEmpty()) {
+            localInstrument = "CORE";
+        } else {
+            localInstrument = localInstrument.toUpperCase(Locale.ROOT);
+        }
+        data.put("localInstrumentCode", localInstrument);
+
         String creditorBIC = firstTx.getField("creditorBIC");
-        if (creditorBIC != null && !creditorBIC.trim().isEmpty()) {
-            data.put("creditorBIC", creditorBIC);
+        if (creditorBIC != null) {
+            creditorBIC = creditorBIC.trim();
+        }
+        if (creditorBIC != null && !creditorBIC.isEmpty()) {
+            data.put("creditorBIC", creditorBIC.toUpperCase(Locale.ROOT));
         }
     }
 

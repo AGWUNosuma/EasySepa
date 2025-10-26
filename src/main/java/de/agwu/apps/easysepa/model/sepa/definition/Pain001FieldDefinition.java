@@ -99,7 +99,11 @@ public class Pain001FieldDefinition implements ISepaFieldDefinition {
             "  - Rechnungsnummer: RE-2025-001\n" +
             "  - Kundennummer + Datum: K123456-20251014\n" +
             "  - Fortlaufende Nummer: TXN-00001\n\n" +
-            "Wichtig: Sollte für jede Transaktion unterschiedlich sein, damit Sie Zahlungen eindeutig zuordnen können."));
+            "Wichtig: Sollte für jede Transaktion unterschiedlich sein, damit Sie Zahlungen eindeutig zuordnen können.\n\n" +
+            "Tipp: Mit 'Fester Wert' lassen sich Platzhalter kombinieren, etwa\n" +
+            "  Rechnung-{today}-{id}    → Tagesdatum + laufende Nummer\n" +
+            "  Auftrag-{row}            → nutzt die CSV-Zeilennummer\n" +
+            "  REF-{uuid:nodash,12}     → erzeugt 12-stellige UUID-Segmente"));
 
         fields.add(new SepaField("amount", "Betrag", true,
             "Betrag:\n" +

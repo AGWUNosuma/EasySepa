@@ -9,6 +9,7 @@ import de.agwu.apps.easysepa.model.sepa.TransactionValidationResult;
 import de.agwu.apps.easysepa.model.sepa.definition.ISepaFieldDefinition;
 import de.agwu.apps.easysepa.util.CsvUtil;
 import de.agwu.apps.easysepa.util.FieldMappingConstants;
+import de.agwu.apps.easysepa.util.TemplateValueResolver;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -75,16 +76,21 @@ public class SepaTransactionBuilder {
 
             Map<String, Integer> headerIndex = buildHeaderIndex(headers);
             Map<String, Boolean> amountFields = precomputeAmountFields(fieldDefinition);
+            Map<String, TemplateValueResolver.TemplateExpression> templatedDefaults = compileDefaultTemplates(defaultValues);
+            Map<String, String> staticDefaults = extractStaticDefaults(defaultValues, templatedDefaults.keySet());
+            Map<String, String> resolvedGlobalValues = resolveGlobalFieldValues(globalFieldValues);
 
             String[] row;
             int dataRowNumber = 1;
+            int transactionIndex = 1;
             while ((row = reader.readNext()) != null) {
                 SepaTransaction transaction = new SepaTransaction(dataRowNumber);
                 List<String> errors = new ArrayList<>();
 
-                addGlobalFields(fieldDefinition, globalFieldValues, transaction);
-                populateTransactionFields(fieldDefinition, columnMappings, defaultValues, decimalSeparator,
-                        headerIndex, row, transaction, errors, amountFields);
+                addGlobalFields(fieldDefinition, resolvedGlobalValues, transaction);
+                populateTransactionFields(fieldDefinition, columnMappings, decimalSeparator,
+                        headerIndex, row, transaction, errors, amountFields,
+                        templatedDefaults, staticDefaults, transactionIndex);
 
                 if (errors.isEmpty()) {
                     result.addValidTransaction(transaction);
@@ -92,6 +98,7 @@ public class SepaTransactionBuilder {
                     result.addInvalidTransaction(transaction, errors);
                 }
                 dataRowNumber++;
+                transactionIndex++;
             }
         }
 
@@ -127,13 +134,15 @@ public class SepaTransactionBuilder {
 
     private void populateTransactionFields(ISepaFieldDefinition fieldDefinition,
                                            Map<String, String> columnMappings,
-                                           Map<String, String> defaultValues,
                                            char decimalSeparator,
                                            Map<String, Integer> headerIndex,
                                            String[] row,
                                            SepaTransaction transaction,
                                            List<String> errors,
-                                           Map<String, Boolean> amountFields) {
+                                           Map<String, Boolean> amountFields,
+                                           Map<String, TemplateValueResolver.TemplateExpression> templatedDefaults,
+                                           Map<String, String> staticDefaults,
+                                           int transactionIndex) {
 
         for (SepaField field : fieldDefinition.getTransactionFields()) {
             String fieldName = field.getFieldName();
@@ -149,7 +158,12 @@ public class SepaTransactionBuilder {
                     }
                 }
             } else {
-                value = defaultValues.get(fieldName);
+                TemplateValueResolver.TemplateExpression expression = templatedDefaults.get(fieldName);
+                if (expression != null) {
+                    value = expression.render(transactionIndex, transaction.getRowNumber());
+                } else {
+                    value = staticDefaults.get(fieldName);
+                }
             }
 
             if (value != null && !value.trim().isEmpty()) {
@@ -158,5 +172,34 @@ public class SepaTransactionBuilder {
                 errors.add(field.getDisplayName() + " fehlt");
             }
         }
+    }
+
+    private Map<String, TemplateValueResolver.TemplateExpression> compileDefaultTemplates(Map<String, String> defaultValues) {
+        Map<String, TemplateValueResolver.TemplateExpression> compiled = new HashMap<>();
+        for (Map.Entry<String, String> entry : defaultValues.entrySet()) {
+            TemplateValueResolver.compile(entry.getValue()).ifPresent(expression -> compiled.put(entry.getKey(), expression));
+        }
+        return compiled;
+    }
+
+    private Map<String, String> extractStaticDefaults(Map<String, String> defaultValues, java.util.Set<String> templatedKeys) {
+        Map<String, String> staticDefaults = new HashMap<>();
+        for (Map.Entry<String, String> entry : defaultValues.entrySet()) {
+            if (!templatedKeys.contains(entry.getKey())) {
+                staticDefaults.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return staticDefaults;
+    }
+
+    private Map<String, String> resolveGlobalFieldValues(Map<String, String> globalFieldValues) {
+        Map<String, String> resolved = new HashMap<>();
+        for (Map.Entry<String, String> entry : globalFieldValues.entrySet()) {
+            TemplateValueResolver.compile(entry.getValue())
+                    .ifPresentOrElse(
+                            expression -> resolved.put(entry.getKey(), expression.render(1, 1)),
+                            () -> resolved.put(entry.getKey(), entry.getValue()));
+        }
+        return resolved;
     }
 }

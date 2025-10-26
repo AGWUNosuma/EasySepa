@@ -69,6 +69,52 @@ class SepaTransactionBuilderTest {
         assertTrue(invalidErrors.get(0).contains("Amount"));
     }
 
+    @Test
+    void appliesTemplatedDefaults() throws IOException, CsvException {
+        Path csvFile = tempDir.resolve("templated.csv");
+        Files.writeString(csvFile, String.join(System.lineSeparator(),
+                "debtorName;amount",
+                "Anna;15,00",
+                "Ben;20,50"
+        ));
+
+        ISepaFieldDefinition definition = new TestDefinition();
+        SepaTransactionBuilder builder = new SepaTransactionBuilder();
+
+        Map<String, String> globalFieldValues = Map.of("msgId", "MSG-{today}");
+        Map<String, String> columnMappings = Map.of(
+                "debtorName", "debtorName",
+                "amount", "amount",
+                "optionalReference", FieldMappingConstants.FIXED_VALUE_OPTION
+        );
+        Map<String, String> defaultValues = Map.of("optionalReference", "Rechnung-{id:1000,pad=4}");
+
+        TransactionValidationResult result = builder.buildTransactions(
+                csvFile.toFile(),
+                ';',
+                "UTF-8",
+                ',',
+                definition,
+                globalFieldValues,
+                columnMappings,
+                defaultValues
+        );
+
+        assertEquals(2, result.getValidTransactions().size());
+        assertTrue(result.getInvalidTransactions().isEmpty());
+
+        var tx1 = result.getValidTransactions().get(0);
+        var tx2 = result.getValidTransactions().get(1);
+
+        String msgId = tx1.getField("msgId");
+        assertNotNull(msgId);
+        assertTrue(msgId.startsWith("MSG-"));
+        assertEquals(msgId, tx2.getField("msgId"));
+
+        assertEquals("Rechnung-1000", tx1.getField("optionalReference"));
+        assertEquals("Rechnung-1001", tx2.getField("optionalReference"));
+    }
+
     private static class TestDefinition implements ISepaFieldDefinition {
         private final List<SepaField> globalFields = List.of(
                 new SepaField("msgId", "Message ID", true, "Message identifier")

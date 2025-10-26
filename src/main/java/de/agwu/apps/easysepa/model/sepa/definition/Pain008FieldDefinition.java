@@ -52,6 +52,12 @@ public class Pain008FieldDefinition implements ISepaFieldDefinition {
             "Beispiele: PMT-DD-2025-10-14-001, LS-BATCH-123\n\n" +
             "Tipp: Wird automatisch generiert wenn leer gelassen"));
 
+        fields.add(new SepaField("batchBooking", "Sammelbuchung", false,
+            "Sammelbuchung (Batch Booking):\n" +
+            "Gibt an, ob die Bank die Lastschriften als Sammelbuchung (true) " +
+            "oder einzeln (false) ausführen soll.\n\n" +
+            "Standard: true – die meisten Banken erwarten Sammelbuchungen."));
+
         fields.add(new SepaField("reqdColltnDt", "Gewünschtes Einzugsdatum", true,
             "Gewünschtes Einzugsdatum:\n" +
             "Das Datum, an dem die Bank die Lastschriften einziehen soll.\n\n" +
@@ -106,6 +112,13 @@ public class Pain008FieldDefinition implements ISepaFieldDefinition {
             "    → Verwenden für die allerletzte Abbuchung (danach Mandat ungültig)\n\n" +
             "Wichtig: Die Vorlauffristen unterscheiden sich je nach Typ!"));
 
+        fields.add(new SepaField("localInstrumentCode", "Local Instrument Code", false,
+            "Local Instrument Code:\n" +
+            "Kennzeichnet das Lastschriftverfahren (z. B. CORE oder B2B).\n\n" +
+            "Standard: CORE – klassische SEPA-Basislastschrift.\n" +
+            "Weitere Optionen: B2B (Business-to-Business), COR1 (verkürzte Vorlauffrist, sofern unterstützt).\n\n" +
+            "Wenn nichts angegeben wird, nutzt EasySepa automatisch CORE."));
+
         return fields;
     }
 
@@ -121,7 +134,11 @@ public class Pain008FieldDefinition implements ISepaFieldDefinition {
             "  - Kundennummer: K-123456\n" +
             "  - Vertragsnummer + Datum: V789-20251014\n" +
             "  - Rechnungsnummer: RE-2025-001\n\n" +
-            "Wichtig: Sollte für jede Transaktion unterschiedlich sein zur eindeutigen Zuordnung."));
+            "Wichtig: Sollte für jede Transaktion unterschiedlich sein zur eindeutigen Zuordnung.\n\n" +
+            "Tipp: Über die Option 'Fester Wert' können Sie dynamische Platzhalter verwenden, z. B.\n" +
+            "  Rechnung-{today}-{id}  → erzeugt laufende IDs mit Tagesdatum\n" +
+            "  Mandat-{row}           → nutzt die Zeilennummer aus der CSV\n" +
+            "  TX-{datetime:yyyyMMddHHmm}-{random:4} → kombiniert Zeitstempel und Zufallszahl"));
 
         fields.add(new SepaField("amount", "Betrag", true,
             "Betrag:\n" +
