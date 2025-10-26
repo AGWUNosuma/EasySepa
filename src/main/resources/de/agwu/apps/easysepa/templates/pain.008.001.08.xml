@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.008.001.08" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <CstmrDrctDbtInitn>
+        <GrpHdr>
+            <MsgId>{{msgId}}</MsgId>
+            <CreDtTm>{{creationDateTime}}</CreDtTm>
+            <NbOfTxs>{{numberOfTransactions}}</NbOfTxs>
+            <CtrlSum>{{controlSum}}</CtrlSum>
+            <InitgPty>
+                <Nm>{{initiatorName}}</Nm>
+            </InitgPty>
+        </GrpHdr>
+
+        <PmtInf>
+            <PmtInfId>{{pmtInfId}}</PmtInfId>
+            <PmtMtd>DD</PmtMtd>
+            <BtchBookg>{{batchBooking}}</BtchBookg> <!-- z.B. true -->
+            <NbOfTxs>{{numberOfTransactions}}</NbOfTxs>
+            <CtrlSum>{{controlSum}}</CtrlSum>
+
+            <PmtTpInf>
+                <SvcLvl><Cd>SEPA</Cd></SvcLvl>
+                <LclInstrm><Cd>CORE</Cd></LclInstrm> <!-- oder B2B -->
+                <SeqTp>{{seqTp}}</SeqTp> <!-- FRST / RCUR / OOFF / FNAL -->
+            </PmtTpInf>
+
+            <ReqdColltnDt>{{reqdColltnDt}}</ReqdColltnDt>
+
+            <Cdtr>
+                <Nm>{{creditorName}}</Nm>
+            </Cdtr>
+            <CdtrAcct>
+                <Id><IBAN>{{creditorIBAN}}</IBAN></Id>
+            </CdtrAcct>
+
+            {{#creditorBIC}}
+            <CdtrAgt>
+                <FinInstnId><BICFI>{{creditorBIC}}</BICFI></FinInstnId>
+            </CdtrAgt>
+            {{/creditorBIC}}
+            {{^creditorBIC}}
+            <CdtrAgt>
+                <FinInstnId>
+                    <Othr><Id>NOTPROVIDED</Id></Othr>
+                </FinInstnId>
+            </CdtrAgt>
+            {{/creditorBIC}}
+
+            <ChrgBr>SLEV</ChrgBr>
+
+            <CdtrSchmeId>
+                <Id>
+                    <PrvtId>
+                        <Othr>
+                            <Id>{{creditorId}}</Id>
+                            <SchmeNm><Prtry>SEPA</Prtry></SchmeNm>
+                        </Othr>
+                    </PrvtId>
+                </Id>
+            </CdtrSchmeId>
+
+            {{#transactions}}
+            <DrctDbtTxInf>
+                <PmtId>
+                    <EndToEndId>{{endToEndId}}</EndToEndId> <!-- bei Bedarf NOTPROVIDED -->
+                </PmtId>
+
+                <InstdAmt Ccy="EUR">{{amount}}</InstdAmt>
+
+                <DrctDbtTx>
+                    <MndtRltdInf>
+                        <MndtId>{{mandateId}}</MndtId>
+                        <DtOfSgntr>{{mandateSignatureDate}}</DtOfSgntr>
+                    </MndtRltdInf>
+                </DrctDbtTx>
+
+                {{#debtorBIC}}
+                <DbtrAgt>
+                    <FinInstnId><BICFI>{{debtorBIC}}</BICFI></FinInstnId>
+                </DbtrAgt>
+                {{/debtorBIC}}
+                {{^debtorBIC}}
+                <DbtrAgt>
+                    <FinInstnId>
+                        <Othr><Id>NOTPROVIDED</Id></Othr>
+                    </FinInstnId>
+                </DbtrAgt>
+                {{/debtorBIC}}
+
+                <Dbtr>
+                    <Nm>{{debtorName}}</Nm>
+                </Dbtr>
+                <DbtrAcct>
+                    <Id><IBAN>{{debtorIBAN}}</IBAN></Id>
+                </DbtrAcct>
+
+                {{#remittanceInfo}}
+                <RmtInf>
+                    <Ustrd>{{remittanceInfo}}</Ustrd>
+                </RmtInf>
+                {{/remittanceInfo}}
+            </DrctDbtTxInf>
+            {{/transactions}}
+        </PmtInf>
+    </CstmrDrctDbtInitn>
+</Document>
