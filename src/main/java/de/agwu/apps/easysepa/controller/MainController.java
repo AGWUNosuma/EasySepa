@@ -7,6 +7,7 @@ import de.agwu.apps.easysepa.model.sepa.SepaFormat;
 import de.agwu.apps.easysepa.model.sepa.TransactionValidationResult;
 import de.agwu.apps.easysepa.model.sepa.definition.ISepaFieldDefinition;
 import de.agwu.apps.easysepa.model.sepa.definition.SepaFieldDefinitionFactory;
+import de.agwu.apps.easysepa.model.sepa.SepaFormatType;
 import de.agwu.apps.easysepa.service.ConfigService;
 import de.agwu.apps.easysepa.service.FieldMappingService;
 import de.agwu.apps.easysepa.service.SepaTransactionBuilder;
@@ -722,6 +723,20 @@ public class MainController {
                 return;
             }
 
+            SepaFormatType configType;
+            try {
+                configType = SepaFormat.resolveType(config.getSepaFormat());
+            } catch (IllegalArgumentException e) {
+                setStatus("Fehler: Konfiguration enthält ein unbekanntes SEPA-Format.", StatusType.ERROR);
+                return;
+            }
+
+            SepaFormat selectedFormat = sepaFormatComboBox.getValue();
+            if (selectedFormat != null && selectedFormat.getType() != configType) {
+                setStatus("Fehler: Die Konfiguration ist für einen anderen SEPA-Typ bestimmt.", StatusType.ERROR);
+                return;
+            }
+
             // Apply CSV configuration
             if (config.getCsvSeparator() != null) {
                 separatorComboBox.setValue(config.getCsvSeparator());
@@ -734,10 +749,25 @@ public class MainController {
             }
 
             // Apply SEPA format
+            boolean formatMatched = false;
             for (SepaFormat format : SepaFormat.values()) {
                 if (format.getCode().equals(config.getSepaFormat())) {
                     sepaFormatComboBox.setValue(format);
+                    selectedFormat = format;
+                    formatMatched = true;
                     break;
+                }
+            }
+
+            if (!formatMatched) {
+                if (selectedFormat == null || selectedFormat.getType() != configType) {
+                    for (SepaFormat format : SepaFormat.values()) {
+                        if (format.getType() == configType) {
+                            sepaFormatComboBox.setValue(format);
+                            selectedFormat = format;
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -836,8 +866,15 @@ public class MainController {
         for (String configName : allConfigs) {
             try {
                 FieldMappingConfig config = configService.loadConfig(configName);
-                if (config != null && selectedFormat.getCode().equals(config.getSepaFormat())) {
-                    filteredConfigs.add(configName);
+                if (config != null) {
+                    try {
+                        SepaFormatType configType = SepaFormat.resolveType(config.getSepaFormat());
+                        if (configType == selectedFormat.getType()) {
+                            filteredConfigs.add(configName);
+                        }
+                    } catch (IllegalArgumentException e) {
+                        // Skip configs with invalid format codes
+                    }
                 }
             } catch (IOException e) {
                 // Skip configs that can't be loaded
