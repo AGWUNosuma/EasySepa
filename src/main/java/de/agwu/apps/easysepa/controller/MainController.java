@@ -2,11 +2,15 @@ package de.agwu.apps.easysepa.controller;
 
 import com.opencsv.exceptions.CsvException;
 import de.agwu.apps.easysepa.model.config.FieldMappingConfig;
+import de.agwu.apps.easysepa.model.config.FieldMappingConfigSummary;
+import de.agwu.apps.easysepa.model.config.FieldMappingConfigVersion;
+import de.agwu.apps.easysepa.model.config.FieldMappingSelection;
 import de.agwu.apps.easysepa.model.sepa.SepaField;
 import de.agwu.apps.easysepa.model.sepa.SepaFormat;
 import de.agwu.apps.easysepa.model.sepa.TransactionValidationResult;
 import de.agwu.apps.easysepa.model.sepa.definition.ISepaFieldDefinition;
 import de.agwu.apps.easysepa.model.sepa.definition.SepaFieldDefinitionFactory;
+import de.agwu.apps.easysepa.model.sepa.SepaFormatType;
 import de.agwu.apps.easysepa.service.ConfigService;
 import de.agwu.apps.easysepa.service.FieldMappingService;
 import de.agwu.apps.easysepa.service.SepaTransactionBuilder;
@@ -73,7 +77,7 @@ public class MainController {
     private Label statusLabel;
 
     @FXML
-    private ComboBox<String> savedConfigsComboBox;
+    private ComboBox<FieldMappingConfigSummary> savedConfigsComboBox;
 
     private File selectedFile;
     private String[] csvHeaders;
@@ -630,6 +634,30 @@ public class MainController {
         return missingFields;
     }
 
+    private void applyDefaultControlValue(Control control, String value) {
+        if (control == null) {
+            return;
+        }
+
+        if (control instanceof TextField tf) {
+            tf.setText(value != null ? value : "");
+        } else if (control instanceof DatePicker dp) {
+            if (value != null && !value.isBlank()) {
+                try {
+                    dp.setValue(java.time.LocalDate.parse(value));
+                } catch (Exception e) {
+                    dp.setValue(null);
+                }
+            } else {
+                dp.setValue(null);
+            }
+        } else if (control instanceof ComboBox) {
+            @SuppressWarnings("unchecked")
+            ComboBox<String> cb = (ComboBox<String>) control;
+            cb.setValue(value);
+        }
+    }
+
     @FXML
     protected void onSaveConfig() {
         if (currentFieldDefinition == null || csvHeaders == null) {
@@ -669,6 +697,7 @@ public class MainController {
         config.setCsvSeparator(separatorComboBox.getValue());
         config.setCsvEncoding(encodingComboBox.getValue());
         config.setDecimalSeparator(decimalSeparatorComboBox.getValue());
+        config.setVersion(FieldMappingConfigVersion.CURRENT);
 
         // Save global field mappings
         for (SepaField field : currentFieldDefinition.getGlobalFields()) {
@@ -685,14 +714,16 @@ public class MainController {
             Control defaultField = fieldMappingControls.get(field.getFieldName() + "_default");
 
             String selectedColumn = combo.getValue();
-            config.getTransactionFieldMappings().put(field.getFieldName(), selectedColumn);
+            FieldMappingSelection selection;
 
             if (FIXED_VALUE_OPTION.equals(selectedColumn)) {
                 String value = uiUtil.getControlValue(defaultField);
-                if (value != null && !value.trim().isEmpty()) {
-                    config.getTransactionFieldDefaultValues().put(field.getFieldName(), value);
-                }
+                selection = FieldMappingSelection.staticValue(value);
+            } else {
+                selection = FieldMappingSelection.csv(selectedColumn);
             }
+
+            config.getTransactionFieldMappings().put(field.getFieldName(), selection);
         }
 
         // Save to file
@@ -700,7 +731,11 @@ public class MainController {
             configService.saveConfig(config);
             setStatus("Konfiguration '" + configName + "' erfolgreich gespeichert.", StatusType.SUCCESS);
             refreshConfigList();
-            savedConfigsComboBox.setValue(configName);
+            FieldMappingConfigSummary summary = new FieldMappingConfigSummary(configName, config.getVersion());
+            savedConfigsComboBox.getItems().stream()
+                    .filter(item -> item.equals(summary))
+                    .findFirst()
+                    .ifPresent(savedConfigsComboBox::setValue);
         } catch (IOException e) {
             setStatus("Fehler beim Speichern: " + e.getMessage(), StatusType.ERROR);
         }
@@ -708,17 +743,31 @@ public class MainController {
 
     @FXML
     protected void onLoadConfig() {
-        String selectedConfig = savedConfigsComboBox.getValue();
-        if (selectedConfig == null || selectedConfig.trim().isEmpty()) {
+        FieldMappingConfigSummary selectedConfig = savedConfigsComboBox.getValue();
+        if (selectedConfig == null || selectedConfig.name().trim().isEmpty()) {
             setStatus("Bitte wählen Sie eine Konfiguration aus.", StatusType.ERROR);
             return;
         }
 
         try {
-            FieldMappingConfig config = configService.loadConfig(selectedConfig);
+            FieldMappingConfig config = configService.loadConfig(selectedConfig.name());
 
             if (config == null) {
                 setStatus("Fehler: Konfiguration konnte nicht geladen werden.", StatusType.ERROR);
+                return;
+            }
+
+            SepaFormatType configType;
+            try {
+                configType = SepaFormat.resolveType(config.getSepaFormat());
+            } catch (IllegalArgumentException e) {
+                setStatus("Fehler: Konfiguration enthält ein unbekanntes SEPA-Format.", StatusType.ERROR);
+                return;
+            }
+
+            SepaFormat selectedFormat = sepaFormatComboBox.getValue();
+            if (selectedFormat != null && selectedFormat.getType() != configType) {
+                setStatus("Fehler: Die Konfiguration ist für einen anderen SEPA-Typ bestimmt.", StatusType.ERROR);
                 return;
             }
 
@@ -733,13 +782,31 @@ public class MainController {
                 decimalSeparatorComboBox.setValue(config.getDecimalSeparator());
             }
 
-            // Apply SEPA format
+            // Apply SEPA format without overriding a manually chosen compatible version
+            SepaFormat configFormat = null;
             for (SepaFormat format : SepaFormat.values()) {
                 if (format.getCode().equals(config.getSepaFormat())) {
-                    sepaFormatComboBox.setValue(format);
+                    configFormat = format;
                     break;
                 }
             }
+
+            if (configFormat != null) {
+                if (selectedFormat == null || selectedFormat.getCode().equals(configFormat.getCode())) {
+                    sepaFormatComboBox.setValue(configFormat);
+                    selectedFormat = configFormat;
+                }
+            } else if (selectedFormat == null || selectedFormat.getType() != configType) {
+                for (SepaFormat format : SepaFormat.values()) {
+                    if (format.getType() == configType) {
+                        sepaFormatComboBox.setValue(format);
+                        selectedFormat = format;
+                        break;
+                    }
+                }
+            }
+
+            selectedFormat = sepaFormatComboBox.getValue();
 
             // Refresh field mapping if CSV is loaded
             if (csvHeaders != null && csvHeaders.length > 0) {
@@ -764,33 +831,32 @@ public class MainController {
                 }
 
                 // Apply transaction field mappings
-                for (Map.Entry<String, String> entry : config.getTransactionFieldMappings().entrySet()) {
-                    ComboBox<String> combo = (ComboBox<String>) fieldMappingControls.get(entry.getKey() + "_combo");
-                    if (combo != null) {
-                        combo.setValue(entry.getValue());
+                for (Map.Entry<String, FieldMappingSelection> entry : config.getTransactionFieldMappings().entrySet()) {
+                    String fieldName = entry.getKey();
+                    FieldMappingSelection selection = entry.getValue();
+                    if (selection == null) {
+                        continue;
                     }
-                }
 
-                // Apply transaction field default values
-                for (Map.Entry<String, String> entry : config.getTransactionFieldDefaultValues().entrySet()) {
-                    Control control = fieldMappingControls.get(entry.getKey() + "_default");
-                    if (control instanceof TextField tf) {
-                        tf.setText(entry.getValue());
-                    } else if (control instanceof DatePicker dp) {
-                        try {
-                            dp.setValue(java.time.LocalDate.parse(entry.getValue()));
-                        } catch (Exception e) {
-                            // Ignore parse errors
-                        }
-                    } else if (control instanceof ComboBox) {
-                        @SuppressWarnings("unchecked")
-                        ComboBox<String> cb = (ComboBox<String>) control;
-                        cb.setValue(entry.getValue());
+                    @SuppressWarnings("unchecked")
+                    ComboBox<String> combo = (ComboBox<String>) fieldMappingControls.get(fieldName + "_combo");
+                    Control defaultControl = fieldMappingControls.get(fieldName + "_default");
+
+                    if (combo == null) {
+                        continue;
+                    }
+
+                    if (selection.isStatic()) {
+                        combo.setValue(FIXED_VALUE_OPTION);
+                        applyDefaultControlValue(defaultControl, selection.getValue());
+                    } else {
+                        combo.setValue(selection.getValue());
+                        applyDefaultControlValue(defaultControl, null);
                     }
                 }
             }
 
-            setStatus("Konfiguration '" + selectedConfig + "' erfolgreich geladen.", StatusType.SUCCESS);
+            setStatus("Konfiguration '" + selectedConfig.name() + "' erfolgreich geladen.", StatusType.SUCCESS);
         } catch (IOException e) {
             setStatus("Fehler beim Laden: " + e.getMessage(), StatusType.ERROR);
         }
@@ -798,21 +864,21 @@ public class MainController {
 
     @FXML
     protected void onDeleteConfig() {
-        String selectedConfig = savedConfigsComboBox.getValue();
-        if (selectedConfig == null || selectedConfig.trim().isEmpty()) {
+        FieldMappingConfigSummary selectedConfig = savedConfigsComboBox.getValue();
+        if (selectedConfig == null || selectedConfig.name().trim().isEmpty()) {
             setStatus("Bitte wählen Sie eine Konfiguration aus.", StatusType.ERROR);
             return;
         }
 
         Alert confirmDialog = new Alert(Alert.AlertType.CONFIRMATION);
         confirmDialog.setTitle("Konfiguration löschen");
-        confirmDialog.setHeaderText("Möchten Sie die Konfiguration '" + selectedConfig + "' wirklich löschen?");
+        confirmDialog.setHeaderText("Möchten Sie die Konfiguration '" + selectedConfig.name() + "' wirklich löschen?");
         confirmDialog.setContentText("Diese Aktion kann nicht rückgängig gemacht werden.");
 
         Optional<ButtonType> result = confirmDialog.showAndWait();
         if (result.isPresent() && result.get() == ButtonType.OK) {
-            if (configService.deleteConfig(selectedConfig)) {
-                setStatus("Konfiguration '" + selectedConfig + "' wurde gelöscht.", StatusType.SUCCESS);
+            if (configService.deleteConfig(selectedConfig.name())) {
+                setStatus("Konfiguration '" + selectedConfig.name() + "' wurde gelöscht.", StatusType.SUCCESS);
                 refreshConfigList();
             } else {
                 setStatus("Fehler beim Löschen der Konfiguration.", StatusType.ERROR);
@@ -831,13 +897,20 @@ public class MainController {
 
         // Get all configs and filter by format
         List<String> allConfigs = configService.listConfigs();
-        List<String> filteredConfigs = new ArrayList<>();
+        List<FieldMappingConfigSummary> filteredConfigs = new ArrayList<>();
 
         for (String configName : allConfigs) {
             try {
                 FieldMappingConfig config = configService.loadConfig(configName);
-                if (config != null && selectedFormat.getCode().equals(config.getSepaFormat())) {
-                    filteredConfigs.add(configName);
+                if (config != null) {
+                    try {
+                        SepaFormatType configType = SepaFormat.resolveType(config.getSepaFormat());
+                        if (configType == selectedFormat.getType()) {
+                            filteredConfigs.add(new FieldMappingConfigSummary(configName, config.getVersion()));
+                        }
+                    } catch (IllegalArgumentException e) {
+                        // Skip configs with invalid format codes
+                    }
                 }
             } catch (IOException e) {
                 // Skip configs that can't be loaded

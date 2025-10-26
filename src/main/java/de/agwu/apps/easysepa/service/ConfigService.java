@@ -23,6 +23,7 @@ public class ConfigService {
 
     public ConfigService() {
         this.gson = new GsonBuilder()
+                .registerTypeAdapter(FieldMappingConfig.class, new FieldMappingConfigAdapter())
                 .setPrettyPrinting()
                 .create();
         ensureConfigDirExists();
